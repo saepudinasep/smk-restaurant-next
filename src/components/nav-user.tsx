@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -28,6 +30,14 @@ export function NavUser({
   };
 }) {
   const { isMobile } = useSidebar();
+  const initials =
+    user.name
+      .split(' ')
+      .filter(Boolean)
+      .map((w) => w[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase() || '?';
   return (
     <SidebarMenu>
       <SidebarMenuItem>
@@ -37,7 +47,7 @@ export function NavUser({
           >
             <Avatar className='size-8 rounded-lg grayscale'>
               <AvatarImage src={user.avatar} alt={user.name} />
-              <AvatarFallback className='rounded-lg'>CN</AvatarFallback>
+              <AvatarFallback className='rounded-lg'>{initials}</AvatarFallback>
             </Avatar>
             <div className='grid flex-1 text-left text-sm leading-tight'>
               <span className='truncate font-medium'>{user.name}</span>
@@ -56,7 +66,7 @@ export function NavUser({
                 <div className='flex items-center gap-2 px-1 py-1.5 text-left text-sm'>
                   <Avatar className='size-8'>
                     <AvatarImage src={user.avatar} alt={user.name} />
-                    <AvatarFallback className='rounded-lg'>CN</AvatarFallback>
+                    <AvatarFallback className='rounded-lg'>{initials}</AvatarFallback>
                   </Avatar>
                   <div className='grid flex-1 text-left text-sm leading-tight'>
                     <span className='truncate font-medium'>{user.name}</span>
@@ -67,16 +77,17 @@ export function NavUser({
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
+              <DropdownMenuItem render={<Link href='/account' />}>
                 <CircleUserRoundIcon />
                 Account
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem render={<Link href='/notifications' />}>
                 <BellIcon />
                 Notifications
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
+            {/* TODO: sambungkan ke aksi logout setelah halaman login selesai */}
             <DropdownMenuItem>
               <LogOutIcon />
               Log out
