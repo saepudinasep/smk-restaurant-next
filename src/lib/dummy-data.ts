@@ -285,15 +285,17 @@ export const MONTHS = [
   'December',
 ] as const;
 
-/** Pendapatan per bulan dari bulan `from` sampai `to` (indeks 0-11), dalam Rupiah. */
+/** Pendapatan & jumlah order (yang sudah dibayar) per bulan, dari bulan `from` sampai `to` (indeks 0-11). */
 export function incomeByMonth(from: number, to: number, year: number = ORDER_YEAR) {
   const [start, end] = from <= to ? [from, to] : [to, from];
   return MONTHS.slice(start, end + 1).map((month, i) => {
     const mm = String(start + i + 1).padStart(2, '0');
-    const income = headerOrders
-      .filter((h) => isPaid(h) && h.date.startsWith(`${year}-${mm}`))
-      .reduce((sum, h) => sum + orderTotal(h.orderId), 0);
-    return { month, income };
+    const paid = headerOrders.filter((h) => isPaid(h) && h.date.startsWith(`${year}-${mm}`));
+    return {
+      month,
+      income: paid.reduce((sum, h) => sum + orderTotal(h.orderId), 0),
+      orders: paid.length,
+    };
   });
 }
 
@@ -342,3 +344,7 @@ export function localToday() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+
+/** 2300000 -> '2,3 jt' (untuk sumbu & label chart "Income in Million"). */
+export const formatMillion = (n: number) =>
+  `${String(Math.round(n / 100000) / 10).replace('.', ',')} jt`;
