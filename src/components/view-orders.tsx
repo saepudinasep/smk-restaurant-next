@@ -1,13 +1,22 @@
 'use client';
 
 import * as React from 'react';
-import { ChefHatIcon, CircleCheckIcon, ClockIcon, FlameIcon, ReceiptTextIcon } from 'lucide-react';
+import {
+  ChefHatIcon,
+  CircleCheckIcon,
+  ClockIcon,
+  FlameIcon,
+  ReceiptTextIcon,
+  SearchIcon,
+  XIcon,
+} from 'lucide-react';
 
 import { MenuPhoto } from '@/components/menu-photo';
 import { StatCards } from '@/components/stat-cards';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -76,6 +85,7 @@ export function ViewOrders() {
   );
   const [selectedId, setSelectedId] = React.useState<string>(() => queue[0] ?? '');
   const [saving, setSaving] = React.useState<Set<number>>(new Set());
+  const [query, setQuery] = React.useState('');
 
   const detailsOf = (orderId: string) => details.filter((d) => d.orderId === orderId);
 
@@ -99,6 +109,19 @@ export function ViewOrders() {
   const openOrders = queue.filter((id) => detailsOf(id).some((d) => d.status !== 'Deliver')).length;
   const pendingItems = queued.filter((d) => d.status === 'Pending').length;
   const cookingItems = queued.filter((d) => d.status === 'Cooking').length;
+
+  // Pencarian: Order ID, ID/nama member, atau nama menu di dalam order (mis. "gurame")
+  const needle = query.trim().toLowerCase();
+  const visibleQueue = needle
+    ? queue.filter((orderId) => {
+        const header = headerOrders.find((h) => h.orderId === orderId)!;
+        const member = getMember(header.memberId);
+        const dishes = detailsOf(orderId).map((d) => getMenu(d.menuId).name);
+        return `${orderId} ${member.memberId} ${member.name} ${dishes.join(' ')}`
+          .toLowerCase()
+          .includes(needle);
+      })
+    : queue;
 
   const selected = selectedId ? headerOrders.find((h) => h.orderId === selectedId) : undefined;
   const selectedDetails = selected ? detailsOf(selected.orderId) : [];
@@ -156,7 +179,39 @@ export function ViewOrders() {
               <CardTitle>Order Queue</CardTitle>
               <CardDescription>Oldest orders first.</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className='flex flex-col gap-3'>
+              <div className='relative'>
+                <SearchIcon className='pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground' />
+                <Input
+                  className='px-8'
+                  placeholder='Search order, member or dish...'
+                  aria-label='Search open orders'
+                  value={query}
+                  disabled={loading}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter memilih hasil pertama, Escape menghapus pencarian
+                    if (e.key === 'Enter' && visibleQueue[0]) setSelectedId(visibleQueue[0]);
+                    if (e.key === 'Escape') setQuery('');
+                  }}
+                />
+                {query && (
+                  <Button
+                    variant='ghost'
+                    size='icon-sm'
+                    className='absolute top-1/2 right-1 -translate-y-1/2'
+                    aria-label='Clear search'
+                    onClick={() => setQuery('')}
+                  >
+                    <XIcon />
+                  </Button>
+                )}
+              </div>
+              {needle && !loading && (
+                <p className='text-xs text-muted-foreground' aria-live='polite'>
+                  {visibleQueue.length} of {queue.length} orders
+                </p>
+              )}
               <ul className='flex max-h-[28rem] flex-col gap-2 overflow-y-auto lg:max-h-[32rem]'>
                 {loading &&
                   Array.from({ length: 4 }).map((_, i) => (
@@ -164,8 +219,13 @@ export function ViewOrders() {
                       <Skeleton className='h-[4.5rem] w-full' />
                     </li>
                   ))}
+                {!loading && visibleQueue.length === 0 && (
+                  <li className='py-8 text-center text-sm text-muted-foreground'>
+                    No orders match &ldquo;{query.trim()}&rdquo;.
+                  </li>
+                )}
                 {!loading &&
-                  queue.map((orderId) => {
+                  visibleQueue.map((orderId) => {
                     const header = headerOrders.find((h) => h.orderId === orderId)!;
                     const list = detailsOf(orderId);
                     const status = orderStatus(list);

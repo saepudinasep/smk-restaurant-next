@@ -7,6 +7,8 @@ import {
   ClockIcon,
   CreditCardIcon,
   ReceiptTextIcon,
+  SearchIcon,
+  XIcon,
 } from 'lucide-react';
 
 import { MenuPhoto } from '@/components/menu-photo';
@@ -81,11 +83,13 @@ function validate(form: Form, total: number): Errors {
   }
   if (isCard(form.type)) {
     if (!form.card) errors.card = 'Card number is required.';
-    else if (form.card.length !== CARD_DIGITS) errors.card = `Card number must be ${CARD_DIGITS} digits.`;
+    else if (form.card.length !== CARD_DIGITS)
+      errors.card = `Card number must be ${CARD_DIGITS} digits.`;
     if (!form.bank) errors.bank = 'Select the bank.';
   } else {
     if (!form.received) errors.received = 'Amount received is required.';
-    else if (Number(form.received) < total) errors.received = 'Amount received is less than the total.';
+    else if (Number(form.received) < total)
+      errors.received = 'Amount received is less than the total.';
   }
   return errors;
 }
@@ -96,17 +100,30 @@ function cashSuggestions(total: number) {
   return [...new Set([total, up(50000), up(100000)])];
 }
 
-function ReceiptView({ receipt, orderId, onNext }: { receipt: Receipt; orderId: string; onNext?: () => void }) {
+function ReceiptView({
+  receipt,
+  orderId,
+  onNext,
+}: {
+  receipt: Receipt;
+  orderId: string;
+  onNext?: () => void;
+}) {
   const change = receipt.received !== null ? receipt.received - receipt.total : null;
   const rows: [string, string][] = [
     ['Order', orderId],
     ['Payment type', receipt.payment],
     ...(receipt.bank ? [['Bank', receipt.bank] as [string, string]] : []),
-    ...(receipt.received !== null ? [['Amount received', formatRupiah(receipt.received)] as [string, string]] : []),
+    ...(receipt.received !== null
+      ? [['Amount received', formatRupiah(receipt.received)] as [string, string]]
+      : []),
     ...(change !== null ? [['Change', formatRupiah(change)] as [string, string]] : []),
   ];
   return (
-    <div role='status' className='flex flex-col items-center gap-4 rounded-lg border border-primary/30 bg-primary/5 p-6 text-center'>
+    <div
+      role='status'
+      className='flex flex-col items-center gap-4 rounded-lg border border-primary/30 bg-primary/5 p-6 text-center'
+    >
       <CircleCheckIcon className='size-8 text-primary' />
       <div>
         <p className='font-medium'>Payment recorded</p>
@@ -132,7 +149,8 @@ function PaymentForm({ total, onPay }: { total: number; onPay: (r: Receipt) => P
   const [submitted, setSubmitted] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
 
-  const set = <K extends FieldKey>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }));
+  const set = <K extends FieldKey>(key: K, value: Form[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
   const touch = (key: FieldKey) => setTouched((t) => ({ ...t, [key]: true }));
 
   const errors = validate(form, total);
@@ -150,7 +168,7 @@ function PaymentForm({ total, onPay }: { total: number; onPay: (r: Receipt) => P
       await onPay({
         total,
         payment: form.type,
-        bank: isCard(form.type) ? (form.bank || null) : null,
+        bank: isCard(form.type) ? form.bank || null : null,
         received: isCard(form.type) ? null : received,
       });
     } finally {
@@ -173,7 +191,12 @@ function PaymentForm({ total, onPay }: { total: number; onPay: (r: Receipt) => P
             setSubmitted(false);
           }}
         >
-          <SelectTrigger className='w-full' aria-label='Payment type' aria-invalid={Boolean(shown('type'))} onBlur={() => touch('type')}>
+          <SelectTrigger
+            className='w-full'
+            aria-label='Payment type'
+            aria-invalid={Boolean(shown('type'))}
+            onBlur={() => touch('type')}
+          >
             <SelectValue placeholder='Select payment type' />
           </SelectTrigger>
           <SelectContent>
@@ -219,7 +242,12 @@ function PaymentForm({ total, onPay }: { total: number; onPay: (r: Receipt) => P
                 touch('bank');
               }}
             >
-              <SelectTrigger className='w-full' aria-label='Bank name' aria-invalid={Boolean(shown('bank'))} onBlur={() => touch('bank')}>
+              <SelectTrigger
+                className='w-full'
+                aria-label='Bank name'
+                aria-invalid={Boolean(shown('bank'))}
+                onBlur={() => touch('bank')}
+              >
                 <SelectValue placeholder='Select bank' />
               </SelectTrigger>
               <SelectContent>
@@ -267,7 +295,9 @@ function PaymentForm({ total, onPay }: { total: number; onPay: (r: Receipt) => P
             <FieldError>{shown('received')}</FieldError>
           ) : (
             <FieldDescription>
-              {form.received && change >= 0 ? `Change: ${formatRupiah(change)}` : 'Enter the cash handed over by the guest.'}
+              {form.received && change >= 0
+                ? `Change: ${formatRupiah(change)}`
+                : 'Enter the cash handed over by the guest.'}
             </FieldDescription>
           )}
         </Field>
@@ -287,9 +317,12 @@ export function Payments() {
 
   // Antrian = order yang belum dibayar saat halaman dibuka. Order yang baru dibayar tetap tampil
   // (berlabel Paid) supaya struknya masih bisa dilihat. Order boleh dibayar walau dapur belum selesai.
-  const [queue] = React.useState<HeaderOrder[]>(() => headerOrders.filter((h) => h.payment === null));
+  const [queue] = React.useState<HeaderOrder[]>(() =>
+    headerOrders.filter((h) => h.payment === null),
+  );
   const [receipts, setReceipts] = React.useState<Record<string, Receipt>>({});
   const [selectedId, setSelectedId] = React.useState<string>(() => queue[0]?.orderId ?? '');
+  const [query, setQuery] = React.useState('');
 
   const kitchen = (orderId: string) => {
     const list = detailsOf(orderId);
@@ -299,6 +332,18 @@ export function Payments() {
   const unpaid = queue.filter((h) => !receipts[h.orderId]);
   const outstanding = unpaid.reduce((sum, h) => sum + orderTotal(h.orderId), 0);
   const ready = unpaid.filter((h) => kitchen(h.orderId).done === kitchen(h.orderId).total).length;
+
+  // Pencarian: Order ID, ID/nama member, atau total (mis. 385000 atau 385.000)
+  const needle = query.trim().toLowerCase();
+  const visibleQueue = needle
+    ? queue.filter((h) => {
+        const member = getMember(h.memberId);
+        const total = orderTotal(h.orderId);
+        return `${h.orderId} ${member.memberId} ${member.name} ${total} ${formatRupiah(total)}`
+          .toLowerCase()
+          .includes(needle);
+      })
+    : queue;
 
   const selected = queue.find((h) => h.orderId === selectedId);
   const selectedDetails = selected ? detailsOf(selected.orderId) : [];
@@ -361,7 +406,40 @@ export function Payments() {
               <CardTitle>Unpaid Orders</CardTitle>
               <CardDescription>Choose an order to take payment.</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className='flex flex-col gap-3'>
+              <div className='relative'>
+                <SearchIcon className='pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground' />
+                <Input
+                  className='px-8'
+                  placeholder='Search order or member...'
+                  aria-label='Search unpaid orders'
+                  value={query}
+                  disabled={loading}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter memilih hasil pertama, Escape menghapus pencarian
+                    if (e.key === 'Enter' && visibleQueue[0])
+                      setSelectedId(visibleQueue[0].orderId);
+                    if (e.key === 'Escape') setQuery('');
+                  }}
+                />
+                {query && (
+                  <Button
+                    variant='ghost'
+                    size='icon-sm'
+                    className='absolute top-1/2 right-1 -translate-y-1/2'
+                    aria-label='Clear search'
+                    onClick={() => setQuery('')}
+                  >
+                    <XIcon />
+                  </Button>
+                )}
+              </div>
+              {needle && !loading && (
+                <p className='text-xs text-muted-foreground' aria-live='polite'>
+                  {visibleQueue.length} of {queue.length} orders
+                </p>
+              )}
               <ul className='flex max-h-[28rem] flex-col gap-2 overflow-y-auto lg:max-h-[32rem]'>
                 {loading &&
                   Array.from({ length: 4 }).map((_, i) => (
@@ -369,8 +447,13 @@ export function Payments() {
                       <Skeleton className='h-[4.5rem] w-full' />
                     </li>
                   ))}
+                {!loading && visibleQueue.length === 0 && (
+                  <li className='py-8 text-center text-sm text-muted-foreground'>
+                    No orders match &ldquo;{query.trim()}&rdquo;.
+                  </li>
+                )}
                 {!loading &&
-                  queue.map((h) => {
+                  visibleQueue.map((h) => {
                     const k = kitchen(h.orderId);
                     const paid = Boolean(receipts[h.orderId]);
                     return (
@@ -397,7 +480,9 @@ export function Payments() {
                             <span className='truncate'>{getMember(h.memberId).name}</span>
                             <span className='shrink-0'>{formatDate(h.date)}</span>
                           </div>
-                          <span className='text-sm font-semibold tabular-nums'>{formatRupiah(orderTotal(h.orderId))}</span>
+                          <span className='text-sm font-semibold tabular-nums'>
+                            {formatRupiah(orderTotal(h.orderId))}
+                          </span>
                         </button>
                       </li>
                     );
@@ -458,8 +543,12 @@ export function Payments() {
                                 </div>
                               </TableCell>
                               <TableCell className='text-right tabular-nums'>{d.qty}</TableCell>
-                              <TableCell className='text-right tabular-nums'>{formatRupiah(d.price)}</TableCell>
-                              <TableCell className='text-right font-medium tabular-nums'>{formatRupiah(d.qty * d.price)}</TableCell>
+                              <TableCell className='text-right tabular-nums'>
+                                {formatRupiah(d.price)}
+                              </TableCell>
+                              <TableCell className='text-right font-medium tabular-nums'>
+                                {formatRupiah(d.qty * d.price)}
+                              </TableCell>
                             </TableRow>
                           );
                         })}
@@ -486,10 +575,14 @@ export function Payments() {
                   ) : (
                     <>
                       {selectedKitchen.done < selectedKitchen.total && (
-                        <p role='status' className='flex items-start gap-2 rounded-lg border bg-muted/50 p-3 text-sm'>
+                        <p
+                          role='status'
+                          className='flex items-start gap-2 rounded-lg border bg-muted/50 p-3 text-sm'
+                        >
                           <ClockIcon className='mt-0.5 size-4 shrink-0 text-muted-foreground' />
                           <span>
-                            The kitchen is still preparing {selectedKitchen.total - selectedKitchen.done} of{' '}
+                            The kitchen is still preparing{' '}
+                            {selectedKitchen.total - selectedKitchen.done} of{' '}
                             {selectedKitchen.total} dishes. You can already take payment.
                           </span>
                         </p>
