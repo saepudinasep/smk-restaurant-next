@@ -257,6 +257,15 @@ export function setDetailStatus(detailId: number, status: ItemStatus) {
   if (detail) detail.status = status;
 }
 
+/** Pengganti UPDATE headerorder SET payment, bank (dipakai halaman Payments). Hanya hidup di memori browser. */
+export function setPayment(orderId: string, payment: PaymentType, bank: Bank | null) {
+  const header = headerOrders.find((h) => h.orderId === orderId);
+  if (header) {
+    header.payment = payment;
+    header.bank = bank;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Report: pendapatan per bulan (hanya order yang sudah dibayar)
 // ---------------------------------------------------------------------------
