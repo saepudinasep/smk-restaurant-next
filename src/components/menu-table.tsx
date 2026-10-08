@@ -1,8 +1,9 @@
 'use client';
 
 import * as React from 'react';
-import { ImageIcon, PlusIcon, TagIcon, TrophyIcon, UploadIcon, UtensilsIcon } from 'lucide-react';
+import { PlusIcon, TagIcon, TrophyIcon, UploadIcon, UtensilsIcon } from 'lucide-react';
 
+import { MenuPhoto } from '@/components/menu-photo';
 import { SimpleDataTable, type Column } from '@/components/simple-data-table';
 import { StatCards } from '@/components/stat-cards';
 import { Button } from '@/components/ui/button';
@@ -23,49 +24,14 @@ import { useFakeLoad, wait } from '@/lib/fake-api';
 // Nanti dipindah ke actions/result.ts saat Server Action dibuat (sama seperti proyek pertama).
 type ActionResult = { ok: true } | { ok: false; error: string };
 
-// Foto bawaan diambil dari /public/menus/<nama-file>. Foto yang baru di-upload sementara
-// ditampilkan lewat object URL (photoUrl) sampai ada penyimpanan sungguhan (mis. Cloudinary).
+// Foto yang baru di-upload sementara ditampilkan lewat object URL (photoUrl).
 type MenuRow = Menu & { photoUrl?: string };
 
 // Di form harga berupa teks supaya bisa dikosongkan; diubah ke angka setelah lolos validasi.
 type MenuForm = Omit<MenuRow, 'price'> & { price: string };
 
-const PHOTO_DIR = '/menus';
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-
-/** Foto menu; kalau file tidak ditemukan tampil placeholder, bukan gambar rusak. */
-function MenuPhoto({
-  menu,
-  className = 'size-10',
-}: {
-  menu: Pick<MenuRow, 'name' | 'photo' | 'photoUrl'>;
-  className?: string;
-}) {
-  const src = menu.photoUrl ?? (menu.photo ? `${PHOTO_DIR}/${menu.photo}` : '');
-  const [failedSrc, setFailedSrc] = React.useState('');
-
-  if (!src || failedSrc === src) {
-    return (
-      <div
-        role='img'
-        aria-label={`No photo for ${menu.name || 'menu'}`}
-        className={`flex shrink-0 items-center justify-center rounded-md border bg-muted text-muted-foreground ${className}`}
-      >
-        <ImageIcon className='size-1/2' />
-      </div>
-    );
-  }
-  return (
-    // eslint-disable-next-line @next/next/no-img-element -- object URL / file lokal, tidak cocok untuk next/image
-    <img
-      src={src}
-      alt={menu.name}
-      onError={() => setFailedSrc(src)}
-      className={`shrink-0 rounded-md border object-cover ${className}`}
-    />
-  );
-}
 
 // columns berisi fungsi, jadi harus didefinisikan di file client
 const columns: Column<MenuRow>[] = [
@@ -139,7 +105,8 @@ function MenuFormSheet({
     if (!file) return;
     touch('photo');
 
-    if (!PHOTO_TYPES.includes(file.type)) return setFileError('Photo must be a JPG, PNG or WEBP image.');
+    if (!PHOTO_TYPES.includes(file.type))
+      return setFileError('Photo must be a JPG, PNG or WEBP image.');
     if (file.size > MAX_PHOTO_BYTES) return setFileError('Photo must be 2 MB or smaller.');
     if (file.name.length > 100) return setFileError('File name must be at most 100 characters.');
 

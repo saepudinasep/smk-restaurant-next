@@ -230,13 +230,44 @@ export function nextOrderId(date: string, list: HeaderOrder[] = headerOrders) {
   return `${prefix}${String(max + 1).padStart(4, '0')}`;
 }
 
+/**
+ * Pengganti INSERT headerorder + detailorder untuk tahap UI. Data hanya hidup di memori browser
+ * (hilang saat refresh), tetapi tetap terlihat di halaman lain selama berpindah lewat link.
+ * Order baru berstatus 'Pending' dan belum dibayar.
+ */
+export function addOrder(
+  header: HeaderOrder,
+  items: { menuId: number; qty: number; price: number }[],
+) {
+  headerOrders.push(header);
+  let detailId = Math.max(0, ...detailOrders.map((d) => d.detailId)) + 1;
+  for (const item of items) {
+    detailOrders.push({
+      detailId: detailId++,
+      orderId: header.orderId,
+      ...item,
+      status: 'Pending',
+    });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Report: pendapatan per bulan (hanya order yang sudah dibayar)
 // ---------------------------------------------------------------------------
 
 export const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ] as const;
 
 /** Pendapatan per bulan dari bulan `from` sampai `to` (indeks 0-11), dalam Rupiah. */
@@ -271,9 +302,28 @@ export const dashboardStats = (() => {
 /** 385000 -> 'Rp 385.000' */
 export const formatRupiah = (n: number) => `Rp ${String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`;
 
-const shortMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const shortMonths = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
 /** '2026-10-06' -> '6 Oct 2026' */
 export function formatDate(iso: string) {
   const [y, m, d] = iso.split('-').map(Number);
   return `${d} ${shortMonths[m - 1]} ${y}`;
+}
+
+/** Tanggal hari ini (zona waktu perangkat) dalam YYYY-MM-DD. Hanya panggil dari event handler, bukan saat render. */
+export function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
