@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     template: '%s | SMK Restaurant',
   },
   description:
-    'SMK Nusantara information system: students, teachers, classes, schedules and scores.',
+    'SMK Restaurant is a modern and responsive restaurant website template built with Next.js, Tailwind CSS, and TypeScript. It provides a clean and user-friendly interface for showcasing your restaurant menu, managing orders, and engaging with customers.',
 };
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {
