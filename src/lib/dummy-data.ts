@@ -251,6 +251,12 @@ export function addOrder(
   }
 }
 
+/** Pengganti UPDATE detailorder SET status (dipakai halaman View Orders). Hanya hidup di memori browser. */
+export function setDetailStatus(detailId: number, status: ItemStatus) {
+  const detail = detailOrders.find((d) => d.detailId === detailId);
+  if (detail) detail.status = status;
+}
+
 // ---------------------------------------------------------------------------
 // Report: pendapatan per bulan (hanya order yang sudah dibayar)
 // ---------------------------------------------------------------------------
