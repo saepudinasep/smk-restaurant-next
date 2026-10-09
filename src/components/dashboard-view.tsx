@@ -261,6 +261,14 @@ export function DashboardView() {
         <CardHeader>
           <CardTitle>Recent Orders</CardTitle>
           <CardDescription>The latest orders and where they stand.</CardDescription>
+          <CardAction>
+            <Link
+              href='/order-history'
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            >
+              View all
+            </Link>
+          </CardAction>
         </CardHeader>
         <CardContent>
           {loading ? (

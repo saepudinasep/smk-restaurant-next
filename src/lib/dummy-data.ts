@@ -203,6 +203,11 @@ export const isPaid = (h: HeaderOrder) => h.payment !== null;
 export const isKitchenDone = (orderId: string) =>
   detailsOf(orderId).every((d) => d.status === 'Deliver');
 
+/** Posisi sebuah order: sudah dibayar, menunggu dibayar (dapur selesai), atau masih di dapur. */
+export type OrderPhase = 'paid' | 'awaiting' | 'kitchen';
+export const orderPhase = (h: HeaderOrder): OrderPhase =>
+  isPaid(h) ? 'paid' : isKitchenDone(h.orderId) ? 'awaiting' : 'kitchen';
+
 /** Form View Order (chef): order yang masih ada menu belum 'Deliver'. */
 export const openKitchenOrders = () => headerOrders.filter((h) => !isKitchenDone(h.orderId));
 /** Form Payment (kasir): order yang belum dibayar. */

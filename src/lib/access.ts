@@ -16,11 +16,19 @@ const COMMON = ['/account', '/notifications'];
 
 // Awalan path yang boleh dibuka tiap peran.
 // Admin / Chef / Cashier mengikuti Navigation Form di soal; Dashboard, Orders dan Reports tidak
-// disebut di soal sehingga penempatannya adalah asumsi (Dashboard & Reports: Admin, Orders: Cashier).
+// disebut di soal sehingga penempatannya adalah asumsi (Dashboard & Reports: Admin, Orders: Cashier, Order History: Admin & Cashier).
 const ACCESS: Record<RoleName, string[]> = {
-  Admin: ['/dashboard', '/manage-employee', '/manage-menu', '/manage-member', '/reports', ...COMMON],
+  Admin: [
+    '/dashboard',
+    '/manage-employee',
+    '/manage-menu',
+    '/manage-member',
+    '/order-history',
+    '/reports',
+    ...COMMON,
+  ],
   Chef: ['/view-orders', ...COMMON],
-  Cashier: ['/orders', '/payments', ...COMMON],
+  Cashier: ['/orders', '/payments', '/order-history', ...COMMON],
 };
 
 export function canAccess(role: RoleName | undefined, pathname: string): boolean {
@@ -29,6 +37,9 @@ export function canAccess(role: RoleName | undefined, pathname: string): boolean
 }
 
 /** Menyaring daftar menu sidebar sesuai peran. Item harus punya properti `url`. */
-export function filterNavByRole<T extends { url: string }>(role: RoleName | undefined, items: T[]): T[] {
+export function filterNavByRole<T extends { url: string }>(
+  role: RoleName | undefined,
+  items: T[],
+): T[] {
   return items.filter((item) => canAccess(role, item.url));
 }

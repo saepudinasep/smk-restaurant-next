@@ -2,6 +2,7 @@ import {
   BarChart3Icon,
   ClipboardListIcon,
   CreditCardIcon,
+  HistoryIcon,
   LayoutDashboardIcon,
   ReceiptTextIcon,
   UserIcon,
@@ -19,6 +20,7 @@ export const navMain = [
   { title: 'Orders', url: '/orders', icon: ClipboardListIcon },
   { title: 'View Orders', url: '/view-orders', icon: ReceiptTextIcon },
   { title: 'Payments', url: '/payments', icon: CreditCardIcon },
+  { title: 'Order History', url: '/order-history', icon: HistoryIcon },
   { title: 'Reports', url: '/reports', icon: BarChart3Icon },
 ];
 
