@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
@@ -15,15 +16,15 @@ import {
 } from '@/components/ui/sidebar';
 import { CommandIcon } from 'lucide-react';
 import { navMain } from '@/config/nav';
+import { ROLE_HOME, filterNavByRole, type RoleName } from '@/lib/access';
+import { currentProfile, sidebarUser } from '@/lib/current-user';
 
-const data = {
-  user: {
-    name: 'shadcn',
-    email: 'm@example.com',
-    avatar: '/avatars/shadcn.jpg',
-  },
-};
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+// `role` nanti diisi dari sesi login (mis. session.user.role); sementara memakai pengguna dummy.
+export function AppSidebar({
+  role = currentProfile.position,
+  ...props
+}: React.ComponentProps<typeof Sidebar> & { role?: RoleName }) {
+  const items = filterNavByRole(role, navMain);
   return (
     <Sidebar collapsible='offcanvas' {...props}>
       <SidebarHeader>
@@ -31,7 +32,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenuItem>
             <SidebarMenuButton
               className='data-[slot=sidebar-menu-button]:p-1.5!'
-              render={<a href='/dashboard' />}
+              render={<Link href={ROLE_HOME[role]} />}
             >
               <CommandIcon className='size-5!' />
               <span className='text-base font-semibold'>SMK Restaurant</span>
@@ -40,10 +41,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={navMain.map(({ icon: Icon, ...item }) => ({ ...item, icon: <Icon /> }))} />
+        <NavMain items={items.map(({ icon: Icon, ...item }) => ({ ...item, icon: <Icon /> }))} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser user={sidebarUser()} />
       </SidebarFooter>
     </Sidebar>
   );

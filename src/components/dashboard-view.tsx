@@ -9,7 +9,14 @@ import { MenuPhoto } from '@/components/menu-photo';
 import { StatCards } from '@/components/stat-cards';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import {
   ChartContainer,
   ChartTooltip,
@@ -47,7 +54,10 @@ import { useFakeLoad } from '@/lib/fake-api';
 const chartConfig = { income: { label: 'Income', color: 'var(--primary)' } } satisfies ChartConfig;
 
 /** Status satu order untuk daftar "Recent Orders". */
-function orderState(h: HeaderOrder): { label: string; variant: 'default' | 'secondary' | 'outline' } {
+function orderState(h: HeaderOrder): {
+  label: string;
+  variant: 'default' | 'secondary' | 'outline';
+} {
   if (h.payment !== null) return { label: 'Paid', variant: 'default' };
   const list = detailsOf(h.orderId);
   return list.every((d) => d.status === 'Deliver')
@@ -70,9 +80,14 @@ export function DashboardView() {
   const latestYear = Math.max(0, ...paid.map((h) => Number(h.date.slice(0, 4)))) || 2026;
   const lastMonth = Math.max(
     0,
-    ...paid.filter((h) => h.date.startsWith(String(latestYear))).map((h) => Number(h.date.slice(5, 7)) - 1),
+    ...paid
+      .filter((h) => h.date.startsWith(String(latestYear)))
+      .map((h) => Number(h.date.slice(5, 7)) - 1),
   );
-  const monthly = incomeByMonth(0, lastMonth, latestYear).map((r) => ({ ...r, short: r.month.slice(0, 3) }));
+  const monthly = incomeByMonth(0, lastMonth, latestYear).map((r) => ({
+    ...r,
+    short: r.month.slice(0, 3),
+  }));
 
   // Menu terlaris berdasarkan jumlah porsi pada semua order
   const sold = new Map<number, { qty: number; revenue: number }>();
@@ -138,7 +153,7 @@ export function DashboardView() {
               {MONTHS[0]} - {MONTHS[lastMonth]} {latestYear}, in millions of Rupiah
             </CardDescription>
             <CardAction>
-              <Link href='/report' className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+              <Link href='/reports' className={buttonVariants({ variant: 'outline', size: 'sm' })}>
                 View report
               </Link>
             </CardAction>
@@ -161,7 +176,9 @@ export function DashboardView() {
                     width={44}
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={(v: number) => String(Math.round(v / 100000) / 10).replace('.', ',')}
+                    tickFormatter={(v: number) =>
+                      String(Math.round(v / 100000) / 10).replace('.', ',')
+                    }
                   />
                   <ChartTooltip
                     cursor={false}
@@ -169,12 +186,20 @@ export function DashboardView() {
                       <ChartTooltipContent
                         labelFormatter={(_, payload) => payload?.[0]?.payload?.month}
                         formatter={(value) => (
-                          <span className='font-mono font-medium tabular-nums'>{formatRupiah(Number(value))}</span>
+                          <span className='font-mono font-medium tabular-nums'>
+                            {formatRupiah(Number(value))}
+                          </span>
                         )}
                       />
                     }
                   />
-                  <Area dataKey='income' type='monotone' fill='url(#fillIncome)' stroke='var(--color-income)' strokeWidth={2} />
+                  <Area
+                    dataKey='income'
+                    type='monotone'
+                    fill='url(#fillIncome)'
+                    stroke='var(--color-income)'
+                    strokeWidth={2}
+                  />
                 </AreaChart>
               </ChartContainer>
             )}
@@ -198,7 +223,9 @@ export function DashboardView() {
               {!loading &&
                 top.map((t, i) => (
                   <li key={t.menu.menuId} className='flex items-center gap-3'>
-                    <span className='w-4 text-sm font-medium text-muted-foreground tabular-nums'>{i + 1}</span>
+                    <span className='w-4 text-sm font-medium text-muted-foreground tabular-nums'>
+                      {i + 1}
+                    </span>
                     <MenuPhoto menu={t.menu} />
                     <div className='flex min-w-0 flex-1 flex-col gap-1'>
                       <div className='flex items-baseline justify-between gap-2'>
@@ -213,9 +240,14 @@ export function DashboardView() {
                         aria-valuenow={t.qty}
                         className='h-1.5 overflow-hidden rounded-full bg-muted'
                       >
-                        <div className='h-full bg-primary' style={{ width: `${(t.qty / topQty) * 100}%` }} />
+                        <div
+                          className='h-full bg-primary'
+                          style={{ width: `${(t.qty / topQty) * 100}%` }}
+                        />
                       </div>
-                      <span className='text-xs text-muted-foreground tabular-nums'>{formatRupiah(t.revenue)}</span>
+                      <span className='text-xs text-muted-foreground tabular-nums'>
+                        {formatRupiah(t.revenue)}
+                      </span>
                     </div>
                   </li>
                 ))}
@@ -253,7 +285,9 @@ export function DashboardView() {
                         <TableCell className='font-mono'>{h.orderId}</TableCell>
                         <TableCell>{getMember(h.memberId).name}</TableCell>
                         <TableCell>{formatDate(h.date)}</TableCell>
-                        <TableCell className='text-right tabular-nums'>{formatRupiah(orderTotal(h.orderId))}</TableCell>
+                        <TableCell className='text-right tabular-nums'>
+                          {formatRupiah(orderTotal(h.orderId))}
+                        </TableCell>
                         <TableCell>
                           <Badge variant={state.variant}>{state.label}</Badge>
                         </TableCell>
