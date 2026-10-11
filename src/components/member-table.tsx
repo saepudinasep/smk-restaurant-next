@@ -3,6 +3,8 @@
 import * as React from 'react';
 import { PlusIcon, ShoppingBagIcon, UserPlusIcon, UsersIcon } from 'lucide-react';
 
+import { createMember, deleteMember, updateMember } from '@/actions/members';
+import type { ActionResult } from '@/actions/result';
 import { SimpleDataTable, type Column } from '@/components/simple-data-table';
 import { StatCards } from '@/components/stat-cards';
 import { Button } from '@/components/ui/button';
@@ -17,11 +19,9 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
-import { formatDate, headerOrders, members, nextMemberId, type Member } from '@/lib/dummy-data';
-import { useFakeLoad, wait } from '@/lib/fake-api';
-
-// Nanti dipindah ke actions/result.ts saat Server Action dibuat (sama seperti proyek pertama).
-type ActionResult = { ok: true } | { ok: false; error: string };
+import { nextMemberCode } from '@/lib/codes';
+import { formatDate } from '@/lib/format';
+import type { Member } from '@/lib/types';
 
 // columns berisi fungsi, jadi harus didefinisikan di file client
 const columns: Column<Member>[] = [
@@ -56,7 +56,8 @@ function validate(form: Member, original: Member, others: Member[], today: strin
     errors.email = 'Email is already used by another member.';
 
   if (!form.handphone) errors.handphone = 'Handphone is required.';
-  else if (!/^\d{10,13}$/.test(form.handphone)) errors.handphone = 'Handphone must be 10-13 digits.';
+  else if (!/^\d{10,13}$/.test(form.handphone))
+    errors.handphone = 'Handphone must be 10-13 digits.';
 
   if (!form.joinDate) errors.joinDate = 'Join date is required.';
   else if (form.joinDate > today && form.joinDate !== original.joinDate)
@@ -218,17 +219,21 @@ function MemberFormSheet({
 
 type SheetState = { mode: 'insert' | 'update'; member: Member; today: string };
 
-export function MemberTable() {
-  // Simulasi membaca data. Saat database siap: ganti dengan data dari server (props) seperti proyek pertama.
-  const loading = useFakeLoad('members');
-  const [data, setData] = React.useState<Member[]>(members);
+export function MemberTable({
+  initialData,
+  memberIdsWithOrders,
+}: {
+  initialData: Member[];
+  memberIdsWithOrders: string[];
+}) {
+  // Data datang dari server (props). Setelah Server Action memanggil revalidatePath,
+  // Next.js mengirim props baru sehingga tabel dan kartu ikut ter-update.
+  const data = initialData;
   const [sheet, setSheet] = React.useState<SheetState | null>(null);
 
-  // Member yang sudah punya order tidak boleh dihapus (FK headerorder.memberid).
-  const memberIdsWithOrders = React.useMemo(() => new Set(headerOrders.map((h) => h.memberId)), []);
-
   const total = data.length;
-  const active = data.filter((m) => memberIdsWithOrders.has(m.memberId)).length;
+  const ordered = new Set(memberIdsWithOrders);
+  const active = data.filter((m) => ordered.has(m.memberId)).length;
   const newest = [...data].sort((a, b) =>
     (b.joinDate + b.memberId).localeCompare(a.joinDate + a.memberId),
   )[0];
@@ -239,34 +244,21 @@ export function MemberTable() {
     setSheet({
       mode: 'insert',
       today,
-      member: { memberId: nextMemberId(data), name: '', email: '', handphone: '', joinDate: today },
+      // Hanya pratinjau; ID yang sebenarnya ditentukan server saat menyimpan
+      member: {
+        memberId: nextMemberCode(data.map((m) => m.memberId)),
+        name: '',
+        email: '',
+        handphone: '',
+        joinDate: today,
+      },
     });
   };
-  const openUpdate = (member: Member) =>
-    setSheet({ mode: 'update', member, today: localToday() });
-
-  const createMember = async (m: Member): Promise<ActionResult> => {
-    await wait();
-    setData((d) => [...d, m]);
-    return { ok: true };
-  };
-  const updateMember = async (m: Member): Promise<ActionResult> => {
-    await wait();
-    setData((d) => d.map((x) => (x.memberId === m.memberId ? m : x)));
-    return { ok: true };
-  };
-  const deleteMember = async (m: Member): Promise<ActionResult> => {
-    await wait();
-    if (memberIdsWithOrders.has(m.memberId))
-      return { ok: false, error: `${m.name} already has order history and cannot be deleted.` };
-    setData((d) => d.filter((x) => x.memberId !== m.memberId));
-    return { ok: true };
-  };
+  const openUpdate = (member: Member) => setSheet({ mode: 'update', member, today: localToday() });
 
   return (
     <div className='flex flex-col gap-3 md:gap-3'>
       <StatCards
-        loading={loading}
         items={[
           {
             label: 'Total Members',
@@ -298,14 +290,13 @@ export function MemberTable() {
       <SimpleDataTable
         data={data}
         columns={columns}
-        loading={loading}
         getRowId={(m) => m.memberId}
         getRowLabel={(m) => m.name}
         searchText={(m) => `${m.memberId} ${m.name} ${m.email} ${m.handphone}`}
         onEdit={openUpdate}
-        onDelete={deleteMember}
+        onDelete={(m) => deleteMember(m.memberId)}
         toolbarActions={
-          <Button disabled={loading} onClick={openInsert}>
+          <Button onClick={openInsert}>
             <PlusIcon />
             Insert
           </Button>

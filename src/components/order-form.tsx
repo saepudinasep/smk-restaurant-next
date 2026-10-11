@@ -11,6 +11,7 @@ import {
   XIcon,
 } from 'lucide-react';
 
+import { MenuPhoto } from '@/components/menu-photo';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -29,28 +30,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
-import {
-  addOrder,
-  employees,
-  formatRupiah,
-  localToday,
-  members,
-  menus,
-  nextOrderId,
-  type Menu,
-} from '@/lib/dummy-data';
-import { useFakeLoad, wait } from '@/lib/fake-api';
-import { MenuPhoto } from './menu-photo';
+import { createOrder } from '@/actions/orders';
+import { formatRupiah } from '@/lib/format';
+import type { Menu } from '@/lib/types';
+import type { OrderMember } from '@/lib/data/orders';
 
 const MAX_QTY = 99;
-
-// Kasir yang sedang login (dummy). Nanti diganti dengan data dari sesi login.
-const cashier = employees.find((e) => e.position === 'Cashier') ?? employees[0];
-
-const memberItems = members.map((m) => ({ value: m.memberId, label: `${m.memberId} - ${m.name}` }));
-const menuById = new Map(menus.map((m) => [m.menuId, m]));
 
 type CartLine = { menuId: number; qty: number };
 type Placed = { orderId: string; total: number; items: number };
@@ -121,9 +107,20 @@ function MenuCard({ menu, qty, onAdd }: { menu: Menu; qty: number; onAdd: () => 
   );
 }
 
-export function OrderForm() {
-  // Simulasi membaca data. Saat database siap: ganti dengan data dari server (props) seperti proyek pertama.
-  const loading = useFakeLoad('order-menus');
+export function OrderForm({
+  menus,
+  members,
+  cashierName,
+}: {
+  menus: Menu[];
+  members: OrderMember[];
+  cashierName: string;
+}) {
+  const memberItems = React.useMemo(
+    () => members.map((m) => ({ value: m.memberId, label: `${m.memberId} - ${m.name}` })),
+    [members],
+  );
+  const menuById = React.useMemo(() => new Map(menus.map((m) => [m.menuId, m])), [menus]);
 
   const [query, setQuery] = React.useState('');
   const [cart, setCart] = React.useState<CartLine[]>([]);
@@ -131,12 +128,14 @@ export function OrderForm() {
   const [submitted, setSubmitted] = React.useState(false);
   const [placing, setPlacing] = React.useState(false);
   const [placed, setPlaced] = React.useState<Placed | null>(null);
+  const [error, setError] = React.useState('');
 
   const qtyOf = (menuId: number) => cart.find((l) => l.menuId === menuId)?.qty ?? 0;
 
   /** Set jumlah; qty <= 0 menghapus menu dari keranjang, menu baru otomatis ditambahkan. */
   const setQty = (menuId: number, qty: number) => {
     setPlaced(null);
+    setError('');
     setCart((lines) => {
       if (qty <= 0) return lines.filter((l) => l.menuId !== menuId);
       const next = Math.min(qty, MAX_QTY);
@@ -157,29 +156,26 @@ export function OrderForm() {
 
   const placeOrder = async () => {
     setSubmitted(true);
+    setError('');
     if (!memberId || lines.length === 0) return;
 
     setPlacing(true);
     try {
-      await wait();
-      const today = localToday();
-      const orderId = nextOrderId(today);
-      addOrder(
-        {
-          orderId,
-          employeeId: cashier.employeeId,
-          memberId,
-          date: today,
-          payment: null,
-          bank: null,
-        },
-        // harga disalin ke detail order (snapshot), sama seperti kolom detailorder.price
-        lines.map((l) => ({ menuId: l.menuId, qty: l.qty, price: l.menu.price })),
-      );
-      setPlaced({ orderId, total, items: itemCount });
+      // Hanya member dan (menu, qty) yang dikirim; harga, tanggal, kasir, dan kode order ditentukan server
+      const result = await createOrder({
+        memberId,
+        items: lines.map((l) => ({ menuId: l.menuId, qty: l.qty })),
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setPlaced({ orderId: result.orderId, total: result.total, items: result.items });
       setCart([]);
       setMemberId('');
       setSubmitted(false);
+    } catch {
+      setError('Network error. Please try again.');
     } finally {
       setPlacing(false);
     }
@@ -206,29 +202,17 @@ export function OrderForm() {
           </div>
 
           <div className='grid grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] gap-3'>
-            {loading &&
-              Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} aria-busy='true' className='overflow-hidden rounded-lg border'>
-                  <Skeleton className='aspect-4/3 w-full rounded-none' />
-                  <div className='flex flex-col gap-2 p-3'>
-                    <Skeleton className='h-4 w-3/4' />
-                    <Skeleton className='h-4 w-1/2' />
-                    <Skeleton className='mt-1 h-8 w-full' />
-                  </div>
-                </div>
-              ))}
-            {!loading &&
-              visibleMenus.map((m) => (
-                <MenuCard
-                  key={m.menuId}
-                  menu={m}
-                  qty={qtyOf(m.menuId)}
-                  onAdd={() => setQty(m.menuId, qtyOf(m.menuId) + 1)}
-                />
-              ))}
+            {visibleMenus.map((m) => (
+              <MenuCard
+                key={m.menuId}
+                menu={m}
+                qty={qtyOf(m.menuId)}
+                onAdd={() => setQty(m.menuId, qtyOf(m.menuId) + 1)}
+              />
+            ))}
           </div>
 
-          {!loading && visibleMenus.length === 0 && (
+          {visibleMenus.length === 0 && (
             <p className='py-8 text-center text-sm text-muted-foreground'>No menu found.</p>
           )}
         </CardContent>
@@ -241,7 +225,7 @@ export function OrderForm() {
             <ShoppingCartIcon className='size-4' />
             Current Order
           </CardTitle>
-          <CardDescription>Served by {cashier.name}</CardDescription>
+          <CardDescription>Served by {cashierName}</CardDescription>
         </CardHeader>
 
         <CardContent className='flex flex-col gap-4'>
@@ -340,6 +324,14 @@ export function OrderForm() {
         </CardContent>
 
         <CardFooter className='flex-col items-stretch gap-3'>
+          {error && (
+            <p
+              role='alert'
+              className='rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive'
+            >
+              {error}
+            </p>
+          )}
           <div className='flex items-baseline justify-between'>
             <span className='text-sm text-muted-foreground'>
               Total ({itemCount} {itemCount === 1 ? 'item' : 'items'})

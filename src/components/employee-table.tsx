@@ -1,14 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import {
-  BanknoteIcon,
-  ChefHatIcon,
-  PlusIcon,
-  ShieldCheckIcon,
-  UsersIcon,
-} from 'lucide-react';
+import { BanknoteIcon, ChefHatIcon, PlusIcon, ShieldCheckIcon, UsersIcon } from 'lucide-react';
 
+import { createEmployee, deleteEmployee, updateEmployee } from '@/actions/employees';
+import type { ActionResult } from '@/actions/result';
 import { SimpleDataTable, type Column } from '@/components/simple-data-table';
 import { StatCards } from '@/components/stat-cards';
 import { Badge } from '@/components/ui/badge';
@@ -31,17 +27,9 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
-import {
-  POSITIONS,
-  employees,
-  headerOrders,
-  nextEmployeeId,
-  type Employee,
-} from '@/lib/dummy-data';
-import { useFakeLoad, wait } from '@/lib/fake-api';
-
-// Nanti dipindah ke actions/result.ts saat Server Action dibuat (sama seperti proyek pertama).
-type ActionResult = { ok: true } | { ok: false; error: string };
+import { ROLES } from '@/lib/access';
+import { nextEmployeeCode } from '@/lib/codes';
+import type { Employee } from '@/lib/types';
 
 // columns berisi fungsi, jadi harus didefinisikan di file client
 const columns: Column<Employee>[] = [
@@ -72,7 +60,8 @@ function validate(form: EmployeeForm, others: Employee[]): Errors {
     errors.email = 'Email is already used by another employee.';
 
   if (!form.handphone) errors.handphone = 'Handphone is required.';
-  else if (!/^\d{10,13}$/.test(form.handphone)) errors.handphone = 'Handphone must be 10-13 digits.';
+  else if (!/^\d{10,13}$/.test(form.handphone))
+    errors.handphone = 'Handphone must be 10-13 digits.';
 
   if (!form.position) errors.position = 'Position is required.';
 
@@ -139,7 +128,7 @@ function EmployeeFormSheet({
           <SheetTitle>{mode === 'insert' ? 'Insert Employee' : 'Update Employee'}</SheetTitle>
           <SheetDescription>
             {mode === 'insert'
-              ? 'Fill in the data for the new employee.'
+              ? 'Fill in the data for the new employee. They can log in with the default password and should change it from Account.'
               : `Edit data for ${employee.employeeId}.`}
           </SheetDescription>
         </SheetHeader>
@@ -220,7 +209,7 @@ function EmployeeFormSheet({
                   <SelectValue placeholder='Select position' />
                 </SelectTrigger>
                 <SelectContent>
-                  {POSITIONS.map((p) => (
+                  {ROLES.map((p) => (
                     <SelectItem key={p} value={p}>
                       {p}
                     </SelectItem>
@@ -254,17 +243,11 @@ function EmployeeFormSheet({
 
 type SheetState = { mode: 'insert' | 'update'; employee: EmployeeForm };
 
-export function EmployeeTable() {
-  // Simulasi membaca data. Saat database siap: ganti dengan data dari server (props) seperti proyek pertama.
-  const loading = useFakeLoad('employees');
-  const [data, setData] = React.useState<Employee[]>(employees);
+export function EmployeeTable({ initialData }: { initialData: Employee[] }) {
+  // Data datang dari server (props). Setelah Server Action memanggil revalidatePath,
+  // Next.js mengirim props baru sehingga tabel dan kartu ikut ter-update.
+  const data = initialData;
   const [sheet, setSheet] = React.useState<SheetState | null>(null);
-
-  // Karyawan yang sudah membuat order tidak boleh dihapus (FK headerorder.employeeid).
-  const employeeIdsWithOrders = React.useMemo(
-    () => new Set(headerOrders.map((h) => h.employeeId)),
-    [],
-  );
 
   const count = (position: Employee['position']) =>
     data.filter((e) => e.position === position).length;
@@ -278,7 +261,8 @@ export function EmployeeTable() {
     setSheet({
       mode: 'insert',
       employee: {
-        employeeId: nextEmployeeId(data),
+        // Hanya pratinjau; ID yang sebenarnya ditentukan server saat menyimpan
+        employeeId: nextEmployeeCode(data.map((e) => e.employeeId)),
         name: '',
         email: '',
         handphone: '',
@@ -287,40 +271,15 @@ export function EmployeeTable() {
     });
   const openUpdate = (employee: Employee) => setSheet({ mode: 'update', employee });
 
-  const createEmployee = async (e: Employee): Promise<ActionResult> => {
-    await wait();
-    setData((d) => [...d, e]);
-    return { ok: true };
-  };
-  const updateEmployee = async (e: Employee): Promise<ActionResult> => {
-    await wait();
-    const before = data.find((x) => x.employeeId === e.employeeId);
-    // Aplikasi harus selalu punya minimal satu Admin, kalau tidak tidak ada yang bisa mengelola data.
-    if (before?.position === 'Admin' && e.position !== 'Admin' && admins <= 1)
-      return { ok: false, error: 'At least one Admin is required. Assign another Admin first.' };
-    setData((d) => d.map((x) => (x.employeeId === e.employeeId ? e : x)));
-    return { ok: true };
-  };
-  const deleteEmployee = async (e: Employee): Promise<ActionResult> => {
-    await wait();
-    if (e.position === 'Admin' && admins <= 1)
-      return { ok: false, error: 'At least one Admin is required. This account cannot be deleted.' };
-    if (employeeIdsWithOrders.has(e.employeeId))
-      return { ok: false, error: `${e.name} already handled orders and cannot be deleted.` };
-    setData((d) => d.filter((x) => x.employeeId !== e.employeeId));
-    return { ok: true };
-  };
-
   return (
     <div className='flex flex-col gap-3 md:gap-3'>
       <StatCards
-        loading={loading}
         items={[
           {
             label: 'Total Employees',
             value: total,
             icon: UsersIcon,
-            badge: `${POSITIONS.length} positions`,
+            badge: `${ROLES.length} positions`,
             title: 'Registered employees',
             note: 'Admin, Chef and Cashier accounts',
           },
@@ -354,14 +313,13 @@ export function EmployeeTable() {
       <SimpleDataTable
         data={data}
         columns={columns}
-        loading={loading}
         getRowId={(e) => e.employeeId}
         getRowLabel={(e) => e.name}
         searchText={(e) => `${e.employeeId} ${e.name} ${e.email} ${e.handphone} ${e.position}`}
         onEdit={openUpdate}
-        onDelete={deleteEmployee}
+        onDelete={(e) => deleteEmployee(e.employeeId)}
         toolbarActions={
-          <Button disabled={loading} onClick={openInsert}>
+          <Button onClick={openInsert}>
             <PlusIcon />
             Insert
           </Button>

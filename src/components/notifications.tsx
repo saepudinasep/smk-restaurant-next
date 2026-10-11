@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useRouter } from 'next/navigation';
 import {
   BanknoteIcon,
   BellIcon,
@@ -15,19 +16,19 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
+import {
+  deleteNotification,
+  markAllNotificationsRead,
+  setNotificationRead,
+} from '@/actions/notifications';
+import type { ActionResult } from '@/actions/result';
 import { StatCards } from '@/components/stat-cards';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useFakeLoad, wait } from '@/lib/fake-api';
-import {
-  formatDateTime,
-  initialNotifications,
-  type AppNotification,
-  type NotificationType,
-} from '@/lib/notifications';
+import { NOTIFICATIONS_CHANGED } from '@/hooks/use-unread-count';
+import { formatDateTime, type AppNotification, type NotificationType } from '@/lib/notifications';
 
 const typeIcon: Record<NotificationType, LucideIcon> = {
   order: ReceiptTextIcon,
@@ -40,52 +41,71 @@ const typeIcon: Record<NotificationType, LucideIcon> = {
 // Jenis yang dianggap aktivitas pesanan, untuk kartu ringkasan ketiga
 const ORDER_ACTIVITY: NotificationType[] = ['order', 'kitchen', 'payment'];
 
+// Daftar diperbarui otomatis supaya notifikasi baru muncul tanpa muat ulang halaman.
+const REFRESH_MS = 15_000;
+
 type Filter = 'all' | 'unread';
 
-export function Notifications() {
-  const [items, setItems] = React.useState<AppNotification[]>(initialNotifications);
+export function Notifications({
+  initialNotifications,
+}: {
+  initialNotifications: AppNotification[];
+}) {
+  const router = useRouter();
+
+  // Data datang dari server (props). Setelah Server Action memanggil revalidatePath,
+  // Next.js mengirim props baru sehingga daftar dan kartu ikut ter-update.
+  const items = initialNotifications;
+
   const [filter, setFilter] = React.useState<Filter>('all');
-  const [busy, setBusy] = React.useState<{ id: number; action: 'read' | 'delete' } | null>(null);
+  const [busy, setBusy] = React.useState<{ id: string; action: 'read' | 'delete' } | null>(null);
   const [markingAll, setMarkingAll] = React.useState(false);
-  const loading = useFakeLoad('notifications'); // ganti dengan isLoading dari API
+  const [error, setError] = React.useState('');
+
+  // Muat ulang data berkala selama tab terlihat; filter yang dipilih tidak hilang
+  React.useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') router.refresh();
+    }, REFRESH_MS);
+    return () => clearInterval(id);
+  }, [router]);
+
+  /** Menjalankan aksi, lalu memberi tahu lonceng di header agar angkanya langsung ikut berubah. */
+  const run = async (task: () => Promise<ActionResult>) => {
+    setError('');
+    try {
+      const result = await task();
+      if (!result.ok) setError(result.error);
+      else window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
+    } catch {
+      setError('Network error. Please try again.');
+    }
+  };
+
+  const toggleRead = async (n: AppNotification) => {
+    setBusy({ id: n.id, action: 'read' });
+    await run(() => setNotificationRead(n.id, !n.read));
+    setBusy(null);
+  };
+  const remove = async (id: string) => {
+    setBusy({ id, action: 'delete' });
+    await run(() => deleteNotification(id));
+    setBusy(null);
+  };
+  const markAllRead = async () => {
+    setMarkingAll(true);
+    await run(() => markAllNotificationsRead());
+    setMarkingAll(false);
+  };
 
   const total = items.length;
   const unread = items.filter((n) => !n.read).length;
   const activity = items.filter((n) => ORDER_ACTIVITY.includes(n.type));
   const visible = filter === 'unread' ? items.filter((n) => !n.read) : items;
 
-  const toggleRead = async (id: number) => {
-    setBusy({ id, action: 'read' });
-    try {
-      await wait(400); // ganti dengan PATCH ke API
-      setItems((list) => list.map((n) => (n.id === id ? { ...n, read: !n.read } : n)));
-    } finally {
-      setBusy(null);
-    }
-  };
-  const remove = async (id: number) => {
-    setBusy({ id, action: 'delete' });
-    try {
-      await wait(400); // ganti dengan DELETE ke API
-      setItems((list) => list.filter((n) => n.id !== id));
-    } finally {
-      setBusy(null);
-    }
-  };
-  const markAllRead = async () => {
-    setMarkingAll(true);
-    try {
-      await wait(); // ganti dengan PATCH ke API
-      setItems((list) => list.map((n) => ({ ...n, read: true })));
-    } finally {
-      setMarkingAll(false);
-    }
-  };
-
   return (
     <div className='flex flex-col gap-3 md:gap-3'>
       <StatCards
-        loading={loading}
         items={[
           {
             label: 'All Notifications',
@@ -121,31 +141,24 @@ export function Notifications() {
             <TabsTrigger value='unread'>Unread ({unread})</TabsTrigger>
           </TabsList>
         </Tabs>
-        <Button variant='outline' disabled={unread === 0 || loading || markingAll} onClick={markAllRead}>
+        <Button variant='outline' disabled={unread === 0 || markingAll} onClick={markAllRead}>
           {markingAll ? <Spinner /> : <CheckCheckIcon />}
           Mark all as read
         </Button>
       </div>
 
+      {error && (
+        <p role='alert' className='text-sm text-destructive'>
+          {error}
+        </p>
+      )}
+
       <Card>
         <CardContent className='p-0'>
-          {loading ? (
-            <ul className='divide-y' aria-busy='true'>
-              {Array.from({ length: 4 }).map((_, i) => (
-                <li key={i} className='flex items-start gap-3 px-4 py-3'>
-                  <Skeleton className='size-9 shrink-0 rounded-lg' />
-                  <div className='flex flex-1 flex-col gap-2'>
-                    <Skeleton className='h-4 w-40' />
-                    <Skeleton className='h-4 w-full max-w-md' />
-                    <Skeleton className='h-3 w-28' />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : visible.length === 0 ? (
+          {visible.length === 0 ? (
             <div className='flex h-40 flex-col items-center justify-center gap-2 text-sm text-muted-foreground'>
               <BellIcon className='size-6' />
-              {filter === 'unread' ? 'No unread notifications.' : 'No notifications.'}
+              {filter === 'unread' ? 'No unread notifications.' : 'No notifications yet.'}
             </div>
           ) : (
             <ul className='divide-y'>
@@ -153,14 +166,26 @@ export function Notifications() {
                 const Icon = typeIcon[n.type];
                 const isBusy = busy?.id === n.id;
                 return (
-                  <li key={n.id} className={`flex items-start gap-3 px-4 py-3 ${n.read ? '' : 'bg-muted/40'}`}>
+                  <li
+                    key={n.id}
+                    className={`flex items-start gap-3 px-4 py-3 ${n.read ? '' : 'bg-muted/40'}`}
+                  >
                     <div className='mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border bg-background'>
                       <Icon className='size-4' />
                     </div>
                     <div className='min-w-0 flex-1'>
                       <div className='flex items-center gap-2'>
-                        {!n.read && <span className='size-2 shrink-0 rounded-full bg-primary' aria-label='Unread' />}
-                        <p className={`truncate text-sm ${n.read ? 'font-normal' : 'font-semibold'}`}>{n.title}</p>
+                        {!n.read && (
+                          <span
+                            className='size-2 shrink-0 rounded-full bg-primary'
+                            aria-label='Unread'
+                          />
+                        )}
+                        <p
+                          className={`truncate text-sm ${n.read ? 'font-normal' : 'font-semibold'}`}
+                        >
+                          {n.title}
+                        </p>
                       </div>
                       <p className='text-sm text-muted-foreground'>{n.message}</p>
                       <p className='mt-1 text-xs text-muted-foreground tabular-nums'>
@@ -172,11 +197,17 @@ export function Notifications() {
                         variant='ghost'
                         size='icon-sm'
                         disabled={isBusy}
-                        onClick={() => toggleRead(n.id)}
+                        onClick={() => toggleRead(n)}
                         aria-label={n.read ? 'Mark as unread' : 'Mark as read'}
                         title={n.read ? 'Mark as unread' : 'Mark as read'}
                       >
-                        {isBusy && busy.action === 'read' ? <Spinner /> : n.read ? <MailOpenIcon /> : <CheckIcon />}
+                        {isBusy && busy.action === 'read' ? (
+                          <Spinner />
+                        ) : n.read ? (
+                          <MailOpenIcon />
+                        ) : (
+                          <CheckIcon />
+                        )}
                       </Button>
                       <Button
                         variant='ghost'

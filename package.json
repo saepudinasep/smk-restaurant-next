@@ -4,9 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "prisma generate"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts",
+    "create-admin": "tsx prisma/create-admin.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -14,11 +19,15 @@
     "@dnd-kit/modifiers": "^9.0.0",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@prisma/client": "^6.19.3",
     "@tanstack/react-table": "^9.2.6",
+    "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
+    "cloudinary": "^2.11.0",
     "cn": "^0.4.0",
     "lucide-react": "^1.52.0",
     "next": "16.3.8",
+    "next-auth": "^5.0.0-beta.32",
     "next-themes": "^0.4.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -34,9 +43,12 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
+    "dotenv": "^18.0.7",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
+    "prisma": "^6.19.3",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

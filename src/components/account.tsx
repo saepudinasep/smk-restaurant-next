@@ -1,8 +1,10 @@
 'use client';
 
 import * as React from 'react';
+import { useSession } from 'next-auth/react';
 import { CheckIcon, CircleIcon, KeyRoundIcon } from 'lucide-react';
 
+import { changePassword, updateProfile, type PasswordField } from '@/actions/account';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,8 +21,15 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/c
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { wait } from '@/lib/fake-api';
-import { currentProfile, currentUser } from '@/lib/current-user';
+import { PASSWORD_MAX, PASSWORD_RULES } from '@/lib/password-rules';
+
+export type AccountProfile = {
+  employeeCode: string;
+  name: string;
+  email: string;
+  handphone: string;
+  position: string;
+};
 
 function Success({ children }: { children: React.ReactNode }) {
   return (
@@ -31,6 +40,14 @@ function Success({ children }: { children: React.ReactNode }) {
       <CheckIcon className='size-4 shrink-0' />
       {children}
     </div>
+  );
+}
+
+function ErrorBox({ children }: { children: React.ReactNode }) {
+  return (
+    <p role='alert' className='text-sm text-destructive'>
+      {children}
+    </p>
   );
 }
 
@@ -50,7 +67,7 @@ const initialsOf = (name: string) =>
 type ProfileForm = { name: string; handphone: string };
 type ProfileKey = keyof ProfileForm;
 
-// Batas panjang mengikuti data dictionary: Name 100, Handphone 13.
+// Batas panjang mengikuti data dictionary: Name 100, Handphone 13. Server memeriksa ulang.
 function validateProfile(f: ProfileForm): Partial<Record<ProfileKey, string>> {
   const errors: Partial<Record<ProfileKey, string>> = {};
   if (!f.name.trim()) errors.name = 'Name is required.';
@@ -59,20 +76,23 @@ function validateProfile(f: ProfileForm): Partial<Record<ProfileKey, string>> {
   return errors;
 }
 
-function ProfileCard() {
+function ProfileCard({ profile }: { profile: AccountProfile }) {
+  const { update } = useSession();
   const [saved, setSaved] = React.useState<ProfileForm>({
-    name: currentProfile.name,
-    handphone: currentProfile.handphone,
+    name: profile.name,
+    handphone: profile.handphone,
   });
   const [form, setForm] = React.useState<ProfileForm>(saved);
   const [touched, setTouched] = React.useState<Partial<Record<ProfileKey, boolean>>>({});
   const [submitted, setSubmitted] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [message, setMessage] = React.useState('');
+  const [error, setError] = React.useState('');
 
   const set = (patch: Partial<ProfileForm>) => {
     setForm((f) => ({ ...f, ...patch }));
     setMessage('');
+    setError('');
   };
   const touch = (key: ProfileKey) => setTouched((t) => ({ ...t, [key]: true }));
 
@@ -84,15 +104,22 @@ function ProfileCard() {
     setSubmitted(true);
     if (Object.keys(errors).length > 0) return;
     setSaving(true);
+    setError('');
     try {
-      await wait(); // ganti dengan UPDATE msemployee (name, handphone) lewat Server Action
       const next = { name: form.name.trim(), handphone: form.handphone };
-      Object.assign(currentProfile, next); // pengganti UPDATE: halaman lain ikut melihat nama baru
+      const result = await updateProfile(next);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      await update(); // muat ulang sesi supaya nama baru juga tampil di sidebar
       setSaved(next);
       setForm(next);
       setTouched({});
       setSubmitted(false);
       setMessage('Profile updated.');
+    } catch {
+      setError('Network error. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -114,7 +141,7 @@ function ProfileCard() {
           <div className='flex flex-col gap-1'>
             <span className='font-medium'>{form.name || '-'}</span>
             <Badge variant='outline' className='w-fit'>
-              {currentProfile.position}
+              {profile.position}
             </Badge>
           </div>
         </div>
@@ -122,7 +149,7 @@ function ProfileCard() {
         <FieldGroup>
           <Field>
             <FieldLabel htmlFor='acc-id'>Employee ID</FieldLabel>
-            <Input id='acc-id' value={currentProfile.employeeId} disabled />
+            <Input id='acc-id' value={profile.employeeCode} disabled />
           </Field>
 
           <Field data-invalid={Boolean(shown('name'))}>
@@ -140,7 +167,7 @@ function ProfileCard() {
 
           <Field>
             <FieldLabel htmlFor='acc-email'>Email</FieldLabel>
-            <Input id='acc-email' value={currentProfile.email} disabled />
+            <Input id='acc-email' value={profile.email} disabled />
             <FieldDescription>Your login email. Ask an Admin to change it.</FieldDescription>
           </Field>
 
@@ -164,12 +191,13 @@ function ProfileCard() {
 
           <Field>
             <FieldLabel htmlFor='acc-position'>Position</FieldLabel>
-            <Input id='acc-position' value={currentProfile.position} disabled />
+            <Input id='acc-position' value={profile.position} disabled />
             <FieldDescription>Determines which menus you can use.</FieldDescription>
           </Field>
         </FieldGroup>
 
         {message && <Success>{message}</Success>}
+        {error && <ErrorBox>{error}</ErrorBox>}
       </CardContent>
       <CardFooter className='gap-2'>
         <Button disabled={!dirty || saving} onClick={save}>
@@ -184,6 +212,7 @@ function ProfileCard() {
             setTouched({});
             setSubmitted(false);
             setMessage('');
+            setError('');
           }}
         >
           Cancel
@@ -197,13 +226,6 @@ function ProfileCard() {
 // Ganti password (form 08 Change Password)
 // ---------------------------------------------------------------------------
 
-// Aturan dari soal: password baru wajib mengandung huruf besar, huruf kecil, dan angka.
-const PASSWORD_RULES = [
-  { key: 'upper', label: 'An uppercase letter (A-Z)', test: (p: string) => /[A-Z]/.test(p) },
-  { key: 'lower', label: 'A lowercase letter (a-z)', test: (p: string) => /[a-z]/.test(p) },
-  { key: 'number', label: 'A number (0-9)', test: (p: string) => /\d/.test(p) },
-] as const;
-
 type PwKey = 'old' | 'new' | 'confirm';
 
 function PasswordCard() {
@@ -215,17 +237,23 @@ function PasswordCard() {
   const [submitted, setSubmitted] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [message, setMessage] = React.useState('');
+  // Kesalahan dari server (mis. password lama salah) dan field yang dimaksud
+  const [serverError, setServerError] = React.useState<{
+    field: PasswordField;
+    error: string;
+  } | null>(null);
 
   const type = show ? 'text' : 'password';
   const touch = (key: PwKey) => setTouched((t) => ({ ...t, [key]: true }));
   const edited = (fn: () => void) => {
     fn();
     setMessage('');
+    setServerError(null);
   };
 
+  // Pemeriksaan di browser agar pesan cepat muncul; password lama diperiksa server.
   const errors: Partial<Record<PwKey, string>> = {};
   if (!oldPw) errors.old = 'Old password is required.';
-  else if (oldPw !== currentUser.password) errors.old = 'Old password is incorrect.';
   if (!newPw) errors.new = 'New password is required.';
   else if (!PASSWORD_RULES.every((r) => r.test(newPw)))
     errors.new = 'New password must contain an uppercase letter, a lowercase letter and a number.';
@@ -233,21 +261,33 @@ function PasswordCard() {
   else if (confirmPw !== newPw)
     errors.confirm = 'Confirm password does not match the new password.';
 
-  const shown = (key: PwKey) => (submitted || touched[key] ? errors[key] : undefined);
+  const shown = (key: PwKey) =>
+    (submitted || touched[key] ? errors[key] : undefined) ??
+    (serverError?.field === key ? serverError.error : undefined);
 
   const save = async () => {
     setSubmitted(true);
     if (Object.keys(errors).length > 0) return;
     setSaving(true);
+    setServerError(null);
     try {
-      await wait(); // ganti dengan UPDATE msemployee SET password (di-hash) lewat Server Action
-      currentUser.password = newPw; // pengganti UPDATE: sesi ini memakai password baru
+      const result = await changePassword({
+        oldPassword: oldPw,
+        newPassword: newPw,
+        confirmPassword: confirmPw,
+      });
+      if (!result.ok) {
+        setServerError({ field: result.field, error: result.error });
+        return;
+      }
       setOldPw('');
       setNewPw('');
       setConfirmPw('');
       setTouched({});
       setSubmitted(false);
       setMessage('Password changed successfully.');
+    } catch {
+      setServerError({ field: 'form', error: 'Network error. Please try again.' });
     } finally {
       setSaving(false);
     }
@@ -269,7 +309,7 @@ function PasswordCard() {
             <Input
               id='pw-old'
               type={type}
-              maxLength={50}
+              maxLength={PASSWORD_MAX}
               autoComplete='current-password'
               value={oldPw}
               aria-invalid={Boolean(shown('old'))}
@@ -284,7 +324,7 @@ function PasswordCard() {
             <Input
               id='pw-new'
               type={type}
-              maxLength={50}
+              maxLength={PASSWORD_MAX}
               autoComplete='new-password'
               value={newPw}
               aria-invalid={Boolean(shown('new'))}
@@ -311,6 +351,7 @@ function PasswordCard() {
                 );
               })}
             </ul>
+            <FieldError>{shown('new')}</FieldError>
           </Field>
 
           <Field data-invalid={Boolean(shown('confirm'))}>
@@ -318,7 +359,7 @@ function PasswordCard() {
             <Input
               id='pw-confirm'
               type={type}
-              maxLength={50}
+              maxLength={PASSWORD_MAX}
               autoComplete='new-password'
               value={confirmPw}
               aria-invalid={Boolean(shown('confirm'))}
@@ -337,6 +378,7 @@ function PasswordCard() {
         </div>
 
         {message && <Success>{message}</Success>}
+        {serverError?.field === 'form' && <ErrorBox>{serverError.error}</ErrorBox>}
       </CardContent>
       <CardFooter>
         <Button disabled={saving} onClick={save}>
@@ -348,10 +390,10 @@ function PasswordCard() {
   );
 }
 
-export function Account() {
+export function Account({ profile }: { profile: AccountProfile }) {
   return (
     <div className='grid items-start gap-4 md:gap-6 lg:grid-cols-2'>
-      <ProfileCard />
+      <ProfileCard profile={profile} />
       <PasswordCard />
     </div>
   );

@@ -32,22 +32,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  MONTHS,
-  detailsOf,
-  formatDate,
-  formatRupiah,
-  getEmployee,
-  getMember,
-  getMenu,
-  headerOrders,
-  orderPhase,
-  orderTotal,
-  type HeaderOrder,
-  type ItemStatus,
-  type OrderPhase,
-} from '@/lib/dummy-data';
-import { useFakeLoad } from '@/lib/fake-api';
+import type { HistoryItem, HistoryOrder, OrderPhase } from '@/lib/data/history';
+import { MONTHS, formatDate, formatRupiah } from '@/lib/format';
 
 const PHASE: Record<OrderPhase, { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
   paid: { label: 'Paid', variant: 'default' },
@@ -55,20 +41,13 @@ const PHASE: Record<OrderPhase, { label: string; variant: 'default' | 'secondary
   kitchen: { label: 'In kitchen', variant: 'secondary' },
 };
 
-const ITEM_VARIANT: Record<ItemStatus, 'default' | 'secondary' | 'outline'> = {
+const ITEM_VARIANT: Record<HistoryItem['status'], 'default' | 'secondary' | 'outline'> = {
   Pending: 'secondary',
   Cooking: 'default',
   Deliver: 'outline',
 };
 
-type Row = {
-  header: HeaderOrder;
-  memberName: string;
-  employeeName: string;
-  items: number;
-  total: number;
-  phase: OrderPhase;
-};
+type Row = HistoryOrder;
 
 type StatusFilter = 'all' | 'paid' | 'unpaid';
 const statusItems = [
@@ -77,18 +56,18 @@ const statusItems = [
   { value: 'unpaid', label: 'Unpaid' },
 ];
 
-const paymentLabel = (h: HeaderOrder) => (h.payment ? (h.bank ? `${h.payment} · ${h.bank}` : h.payment) : '-');
+const paymentLabel = (h: { payment: string | null; bank: string | null }) =>
+  h.payment ? (h.bank ? `${h.payment} · ${h.bank}` : h.payment) : '-';
 const monthLabel = (ym: string) => `${MONTHS[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
 
 /** Rincian satu order (hanya baca). */
 function OrderDetailSheet({ row, onClose }: { row: Row; onClose: () => void }) {
-  const { header, phase, total } = row;
-  const details = detailsOf(header.orderId);
+  const { phase, total } = row;
   const meta: [string, string][] = [
-    ['Date', formatDate(header.date)],
-    ['Member', `${row.memberName} (${header.memberId})`],
+    ['Date', formatDate(row.date)],
+    ['Member', `${row.memberName} (${row.memberId})`],
     ['Served by', row.employeeName],
-    ['Payment', paymentLabel(header)],
+    ['Payment', paymentLabel(row)],
   ];
 
   return (
@@ -96,7 +75,7 @@ function OrderDetailSheet({ row, onClose }: { row: Row; onClose: () => void }) {
       <SheetContent className='sm:max-w-lg'>
         <SheetHeader>
           <SheetTitle className='flex flex-wrap items-center gap-2'>
-            Order <span className='font-mono'>{header.orderId}</span>
+            Order <span className='font-mono'>{row.orderId}</span>
             <Badge variant={PHASE[phase].variant}>{PHASE[phase].label}</Badge>
           </SheetTitle>
           <SheetDescription>Read-only details of this order.</SheetDescription>
@@ -122,15 +101,14 @@ function OrderDetailSheet({ row, onClose }: { row: Row; onClose: () => void }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {details.map((d) => {
-                  const menu = getMenu(d.menuId);
+                {row.items.map((d) => {
                   return (
                     <TableRow key={d.detailId}>
                       <TableCell>
                         <div className='flex items-center gap-3'>
-                          <MenuPhoto menu={menu} />
+                          <MenuPhoto menu={{ name: d.menuName, photo: d.photo }} />
                           <div className='flex min-w-0 flex-col gap-1'>
-                            <span className='truncate font-medium'>{menu.name}</span>
+                            <span className='truncate font-medium'>{d.menuName}</span>
                             <span className='flex items-center gap-2 text-xs text-muted-foreground tabular-nums'>
                               {formatRupiah(d.price)}
                               <Badge variant={ITEM_VARIANT[d.status]}>{d.status}</Badge>
@@ -170,27 +148,16 @@ function OrderDetailSheet({ row, onClose }: { row: Row; onClose: () => void }) {
   );
 }
 
-export function OrderHistory() {
-  // Simulasi membaca data. Saat database siap: ganti dengan data dari server (props) seperti proyek pertama.
-  const loading = useFakeLoad('order-history');
-
+export function OrderHistory({ initialOrders }: { initialOrders: HistoryOrder[] }) {
   const [status, setStatus] = React.useState<StatusFilter>('all');
   const [month, setMonth] = React.useState('all');
   const [selected, setSelected] = React.useState<Row | null>(null);
 
-  // Terbaru dulu (ID order berurutan menurut bulan lalu nomor urut)
-  const rows: Row[] = [...headerOrders]
-    .sort((a, b) => b.orderId.localeCompare(a.orderId))
-    .map((header) => ({
-      header,
-      memberName: getMember(header.memberId).name,
-      employeeName: getEmployee(header.employeeId).name,
-      items: detailsOf(header.orderId).length,
-      total: orderTotal(header.orderId),
-      phase: orderPhase(header),
-    }));
+  // Data datang dari server (props), sudah terurut dari yang terbaru. Setelah order dibuat, status dapur
+  // berubah, atau order dibayar, Server Action memanggil revalidatePath sehingga daftar ikut terbarui.
+  const rows: Row[] = initialOrders;
 
-  const months = [...new Set(rows.map((r) => r.header.date.slice(0, 7)))].sort().reverse();
+  const months = [...new Set(rows.map((r) => r.date.slice(0, 7)))].sort().reverse();
   const monthItems = [
     { value: 'all', label: 'All months' },
     ...months.map((m) => ({ value: m, label: monthLabel(m) })),
@@ -199,7 +166,7 @@ export function OrderHistory() {
   const visible = rows.filter(
     (r) =>
       (status === 'all' || (status === 'paid' ? r.phase === 'paid' : r.phase !== 'paid')) &&
-      (month === 'all' || r.header.date.startsWith(month)),
+      (month === 'all' || r.date.startsWith(month)),
   );
 
   // Kartu ringkasan menghitung semua order, bukan hanya hasil filter
@@ -216,19 +183,19 @@ export function OrderHistory() {
         <button
           type='button'
           onClick={() => setSelected(r)}
-          aria-label={`View details of order ${r.header.orderId}`}
+          aria-label={`View details of order ${r.orderId}`}
           className='rounded font-mono underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2'
         >
-          {r.header.orderId}
+          {r.orderId}
         </button>
       ),
     },
-    { header: 'Date', cell: (r) => formatDate(r.header.date) },
+    { header: 'Date', cell: (r) => formatDate(r.date) },
     { header: 'Member', cell: (r) => r.memberName },
     { header: 'Served by', cell: (r) => r.employeeName },
-    { header: 'Items', cell: (r) => r.items, className: 'text-right tabular-nums' },
+    { header: 'Items', cell: (r) => r.items.length, className: 'text-right tabular-nums' },
     { header: 'Total', cell: (r) => formatRupiah(r.total), className: 'text-right tabular-nums' },
-    { header: 'Payment', cell: (r) => paymentLabel(r.header) },
+    { header: 'Payment', cell: (r) => paymentLabel(r) },
     {
       header: 'Status',
       cell: (r) => <Badge variant={PHASE[r.phase].variant}>{PHASE[r.phase].label}</Badge>,
@@ -238,7 +205,6 @@ export function OrderHistory() {
   return (
     <div className='flex flex-col gap-3 md:gap-3'>
       <StatCards
-        loading={loading}
         items={[
           {
             label: 'Total Orders',
@@ -278,16 +244,19 @@ export function OrderHistory() {
       <SimpleDataTable
         data={visible}
         columns={columns}
-        loading={loading}
         pageSizeOptions={[10, 20, 50]}
-        getRowId={(r) => r.header.orderId}
+        getRowId={(r) => r.orderId}
         // Pencarian: Order ID, ID/nama member, kasir, tipe pembayaran, bank, atau total
         searchText={(r) =>
-          `${r.header.orderId} ${r.header.memberId} ${r.memberName} ${r.employeeName} ${r.header.payment ?? ''} ${r.header.bank ?? ''} ${r.total} ${formatRupiah(r.total)}`
+          `${r.orderId} ${r.memberId} ${r.memberName} ${r.employeeName} ${r.payment ?? ''} ${r.bank ?? ''} ${r.total} ${formatRupiah(r.total)}`
         }
         toolbarActions={
           <div className='flex items-center gap-2'>
-            <Select items={statusItems} value={status} onValueChange={(v) => v && setStatus(v as StatusFilter)}>
+            <Select
+              items={statusItems}
+              value={status}
+              onValueChange={(v) => v && setStatus(v as StatusFilter)}
+            >
               <SelectTrigger className='w-36' aria-label='Filter by status'>
                 <SelectValue />
               </SelectTrigger>

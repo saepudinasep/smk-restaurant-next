@@ -1,0 +1,177 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// Nilai Position sama persis dengan role di aplikasi (lib/access.ts).
+enum Position {
+  Admin
+  Chef
+  Cashier
+}
+
+// Di UI tampil "Credit Card" / "Debit Card"; nama enum tidak boleh berspasi,
+// jadi perlu pemetaan kecil di lib/mappers.ts.
+enum PaymentType {
+  Cash
+  CreditCard
+  DebitCard
+}
+
+enum Bank {
+  BNI
+  BCA
+  BRI
+  Mandiri
+}
+
+// Jenis notifikasi; menentukan ikon di halaman Notifications.
+enum NotificationType {
+  order
+  kitchen
+  payment
+  account
+  system
+}
+
+enum ItemStatus {
+  Pending
+  Cooking
+  Deliver
+}
+
+// Msemployee. Karyawan sekaligus akun login: Email + Password, Position = role.
+model Employee {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  employeeCode String   @unique // EmployeeID di ERD (nchar 6), mis. E00001
+  name         String
+  email        String   @unique // dipakai untuk login
+  password     String // hash bcrypt, bukan teks asli
+  handphone    String
+  position     Position
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Karyawan yang sudah membuat order tidak bisa dihapus (Restrict)
+  orders HeaderOrder[]
+
+  // Notifikasi milik karyawan ini; ikut terhapus bila karyawannya dihapus
+  notifications Notification[]
+}
+
+// Msmember
+model Member {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  memberCode String   @unique // MemberID di ERD (nchar 8), mis. M0000001
+  name       String
+  email      String   @unique
+  handphone  String
+  joinDate   DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Member yang sudah punya order tidak bisa dihapus (Restrict)
+  orders HeaderOrder[]
+}
+
+// Msmenu
+model Menu {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  menuNumber Int      @unique // MenuID di ERD (integer). MongoDB tidak punya auto increment, jadi dibuat di aplikasi (maks + 1)
+  name       String   @unique
+  price      Int // Rupiah
+
+  // Photo wajib. Berisi path lokal (mis. /menus/ayamtelurasin.jpg) atau url Cloudinary;
+  // photoPublicId hanya terisi untuk foto Cloudinary (dipakai untuk hapus/ganti foto).
+  photo         String
+  photoPublicId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Menu yang pernah dipesan tidak bisa dihapus (Restrict)
+  orderItems DetailOrder[]
+}
+
+// Headerorder. payment & bank dibuat opsional: order dibuat SEBELUM dibayar,
+// keduanya baru terisi saat form Payment disimpan (di data dictionary kolomnya required).
+model HeaderOrder {
+  id        String @id @default(auto()) @map("_id") @db.ObjectId
+  orderCode String @unique // OrderID di ERD (nchar 10): YYYY + MM + urutan 4 digit, mis. 2026100008
+
+  employeeId String   @db.ObjectId // kasir yang membuat order
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  memberId String @db.ObjectId
+  member   Member @relation(fields: [memberId], references: [id])
+
+  date    DateTime
+  payment PaymentType? // null = belum dibayar
+  bank    Bank? // null untuk Cash atau belum dibayar
+
+  details DetailOrder[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date]) // laporan per bulan & riwayat
+  @@index([payment]) // daftar order belum dibayar
+  @@index([employeeId])
+  @@index([memberId])
+}
+
+// Detailorder
+model DetailOrder {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  // hapus order => rinciannya ikut terhapus
+  orderId String      @db.ObjectId
+  order   HeaderOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  menuId String @db.ObjectId
+  menu   Menu   @relation(fields: [menuId], references: [id])
+
+  qty    Int
+  price  Int // harga saat order (snapshot): tidak ikut berubah bila harga menu diubah
+  status ItemStatus @default(Pending)
+
+  // updatedAt berubah tiap status diubah; dipakai papan dapur untuk menampilkan order yang baru selesai (lib/data/kitchen.ts)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Satu menu hanya satu baris per order (jumlahnya lewat qty); dijaga langsung oleh database
+  @@unique([orderId, menuId])
+  @@index([menuId])
+  @@index([status]) // antrian dapur
+}
+
+// Notifikasi untuk satu karyawan. ERD tidak punya tabel ini, jadi ini tabel tambahan.
+// Satu kejadian untuk beberapa penerima (mis. semua Chef) disimpan sebagai satu baris per penerima,
+// sehingga status "sudah dibaca" dan hapus bersifat pribadi.
+model Notification {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  recipientId String   @db.ObjectId
+  recipient   Employee @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  type    NotificationType
+  title   String
+  message String
+  readAt  DateTime? // null = belum dibaca
+
+  createdAt DateTime @default(now())
+
+  @@index([recipientId, createdAt]) // daftar notifikasi terbaru
+  @@index([recipientId, readAt]) // hitung yang belum dibaca
+}

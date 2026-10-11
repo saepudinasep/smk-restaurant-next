@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useRouter } from 'next/navigation';
 import {
   ChefHatIcon,
   CircleCheckIcon,
@@ -11,6 +12,7 @@ import {
   XIcon,
 } from 'lucide-react';
 
+import { updateDishStatus } from '@/actions/kitchen';
 import { MenuPhoto } from '@/components/menu-photo';
 import { StatCards } from '@/components/stat-cards';
 import { Badge } from '@/components/ui/badge';
@@ -24,7 +26,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import {
   Table,
@@ -34,30 +35,24 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  ITEM_STATUSES,
-  detailOrders,
-  formatDate,
-  getEmployee,
-  getMember,
-  getMenu,
-  headerOrders,
-  setDetailStatus,
-  type DetailOrder,
-  type ItemStatus,
-} from '@/lib/dummy-data';
-import { useFakeLoad, wait } from '@/lib/fake-api';
+import type { KitchenItem, KitchenOrder } from '@/lib/data/kitchen';
+import { formatDate } from '@/lib/format';
+import { ITEM_STATUSES } from '@/lib/validations';
+
+type ItemStatus = KitchenItem['status'];
+
+// Papan dapur diperbarui otomatis supaya order baru dari kasir muncul tanpa muat ulang.
+const REFRESH_MS = 15_000;
 
 const statusItems = ITEM_STATUSES.map((s) => ({ value: s, label: s }));
 
 /** Status gabungan satu order, dihitung dari status semua menunya. */
-function orderStatus(details: DetailOrder[]): {
+function orderStatus(items: KitchenItem[]): {
   label: string;
   variant: 'secondary' | 'default' | 'outline';
 } {
-  if (details.every((d) => d.status === 'Deliver')) return { label: 'Done', variant: 'outline' };
-  if (details.every((d) => d.status === 'Pending'))
-    return { label: 'Pending', variant: 'secondary' };
+  if (items.every((d) => d.status === 'Deliver')) return { label: 'Done', variant: 'outline' };
+  if (items.every((d) => d.status === 'Pending')) return { label: 'Pending', variant: 'secondary' };
   return { label: 'In progress', variant: 'default' };
 }
 
@@ -67,78 +62,74 @@ const statusDot: Record<ItemStatus, string> = {
   Deliver: 'bg-emerald-500',
 };
 
-export function ViewOrders() {
-  // Simulasi membaca data. Saat database siap: ganti dengan data dari server (props) seperti proyek pertama.
-  const loading = useFakeLoad('view-orders');
+export function ViewOrders({ initialOrders }: { initialOrders: KitchenOrder[] }) {
+  const router = useRouter();
 
-  // Salinan lokal supaya UI ikut berubah; setiap perubahan juga ditulis ke dummy-data (pengganti UPDATE).
-  const [details, setDetails] = React.useState<DetailOrder[]>(() =>
-    detailOrders.map((d) => ({ ...d })),
-  );
+  // Data datang dari server (props). Setelah Server Action memanggil revalidatePath,
+  // Next.js mengirim props baru, jadi status yang tampil selalu yang tersimpan di database.
+  const orders = initialOrders;
 
-  // Antrian = order yang belum selesai saat halaman dibuka, urut dari yang terlama (FIFO).
-  // Order yang baru selesai tetap tampil (berlabel Done) agar tidak tiba-tiba hilang dari layar chef.
-  const [queue] = React.useState<string[]>(() =>
-    headerOrders
-      .filter((h) => detailOrders.some((d) => d.orderId === h.orderId && d.status !== 'Deliver'))
-      .map((h) => h.orderId),
-  );
-  const [selectedId, setSelectedId] = React.useState<string>(() => queue[0] ?? '');
-  const [saving, setSaving] = React.useState<Set<number>>(new Set());
+  const [selectedId, setSelectedId] = React.useState<string>(() => orders[0]?.orderId ?? '');
+  const [saving, setSaving] = React.useState<Set<string>>(new Set());
+  const [error, setError] = React.useState('');
   const [query, setQuery] = React.useState('');
 
-  const detailsOf = (orderId: string) => details.filter((d) => d.orderId === orderId);
+  // Muat ulang data berkala selama tab terlihat; state di browser (pilihan order, pencarian) tidak hilang
+  React.useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') router.refresh();
+    }, REFRESH_MS);
+    return () => clearInterval(id);
+  }, [router]);
 
-  const changeStatus = async (ids: number[], status: ItemStatus) => {
-    setSaving((s) => new Set([...s, ...ids]));
+  const changeStatus = async (detailIds: string[], status: ItemStatus) => {
+    setSaving((s) => new Set([...s, ...detailIds]));
+    setError('');
     try {
-      await wait(400);
-      ids.forEach((id) => setDetailStatus(id, status));
-      setDetails((list) => list.map((d) => (ids.includes(d.detailId) ? { ...d, status } : d)));
+      const result = await updateDishStatus({ detailIds, status });
+      if (!result.ok) setError(result.error);
+    } catch {
+      setError('Network error. Please try again.');
     } finally {
       setSaving((s) => {
         const next = new Set(s);
-        ids.forEach((id) => next.delete(id));
+        detailIds.forEach((id) => next.delete(id));
         return next;
       });
     }
   };
 
-  // Ringkasan hanya dari order yang masih dalam antrian
-  const queued = details.filter((d) => queue.includes(d.orderId));
-  const openOrders = queue.filter((id) => detailsOf(id).some((d) => d.status !== 'Deliver')).length;
-  const pendingItems = queued.filter((d) => d.status === 'Pending').length;
-  const cookingItems = queued.filter((d) => d.status === 'Cooking').length;
+  // Ringkasan dari semua order yang tampil
+  const allItems = orders.flatMap((o) => o.items);
+  const openOrders = orders.filter((o) => o.items.some((d) => d.status !== 'Deliver')).length;
+  const pendingItems = allItems.filter((d) => d.status === 'Pending').length;
+  const cookingItems = allItems.filter((d) => d.status === 'Cooking').length;
 
-  // Pencarian: Order ID, ID/nama member, atau nama menu di dalam order (mis. "gurame")
+  // Pencarian: Order ID, nama member, atau nama menu di dalam order (mis. "gurame")
   const needle = query.trim().toLowerCase();
-  const visibleQueue = needle
-    ? queue.filter((orderId) => {
-        const header = headerOrders.find((h) => h.orderId === orderId)!;
-        const member = getMember(header.memberId);
-        const dishes = detailsOf(orderId).map((d) => getMenu(d.menuId).name);
-        return `${orderId} ${member.memberId} ${member.name} ${dishes.join(' ')}`
+  const visibleOrders = needle
+    ? orders.filter((o) =>
+        `${o.orderId} ${o.memberName} ${o.items.map((d) => d.menuName).join(' ')}`
           .toLowerCase()
-          .includes(needle);
-      })
-    : queue;
+          .includes(needle),
+      )
+    : orders;
 
-  const selected = selectedId ? headerOrders.find((h) => h.orderId === selectedId) : undefined;
-  const selectedDetails = selected ? detailsOf(selected.orderId) : [];
-  const selectedStatus = orderStatus(selectedDetails);
-  const delivered = selectedDetails.filter((d) => d.status === 'Deliver').length;
-  const undelivered = selectedDetails.filter((d) => d.status !== 'Deliver');
+  const selected = orders.find((o) => o.orderId === selectedId);
+  const selectedItems = selected?.items ?? [];
+  const selectedStatus = orderStatus(selectedItems);
+  const delivered = selectedItems.filter((d) => d.status === 'Deliver').length;
+  const undelivered = selectedItems.filter((d) => d.status !== 'Deliver');
 
   return (
     <div className='flex flex-col gap-3 md:gap-3'>
       <StatCards
-        loading={loading}
         items={[
           {
             label: 'Open Orders',
             value: openOrders,
             icon: ReceiptTextIcon,
-            badge: `${queue.length} in queue`,
+            badge: `${orders.length} in queue`,
             title: 'Waiting for the kitchen',
             note: 'Orders with dishes not yet delivered',
           },
@@ -161,13 +152,13 @@ export function ViewOrders() {
         ]}
       />
 
-      {!loading && queue.length === 0 ? (
+      {orders.length === 0 ? (
         <Card>
           <CardContent className='flex flex-col items-center gap-2 py-16 text-center'>
             <CircleCheckIcon className='size-8 text-primary' />
             <p className='font-medium'>The kitchen is all caught up</p>
             <p className='text-sm text-muted-foreground'>
-              There are no open orders. New orders will appear here.
+              There are no open orders. New orders will appear here automatically.
             </p>
           </CardContent>
         </Card>
@@ -177,7 +168,7 @@ export function ViewOrders() {
           <Card>
             <CardHeader>
               <CardTitle>Order Queue</CardTitle>
-              <CardDescription>Oldest orders first.</CardDescription>
+              <CardDescription>Oldest orders first. Updates every 15 seconds.</CardDescription>
             </CardHeader>
             <CardContent className='flex flex-col gap-3'>
               <div className='relative'>
@@ -187,11 +178,11 @@ export function ViewOrders() {
                   placeholder='Search order, member or dish...'
                   aria-label='Search open orders'
                   value={query}
-                  disabled={loading}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={(e) => {
                     // Enter memilih hasil pertama, Escape menghapus pencarian
-                    if (e.key === 'Enter' && visibleQueue[0]) setSelectedId(visibleQueue[0]);
+                    if (e.key === 'Enter' && visibleOrders[0])
+                      setSelectedId(visibleOrders[0].orderId);
                     if (e.key === 'Escape') setQuery('');
                   }}
                 />
@@ -207,70 +198,61 @@ export function ViewOrders() {
                   </Button>
                 )}
               </div>
-              {needle && !loading && (
+              {needle && (
                 <p className='text-xs text-muted-foreground' aria-live='polite'>
-                  {visibleQueue.length} of {queue.length} orders
+                  {visibleOrders.length} of {orders.length} orders
                 </p>
               )}
               <ul className='flex max-h-[28rem] flex-col gap-2 overflow-y-auto lg:max-h-[32rem]'>
-                {loading &&
-                  Array.from({ length: 4 }).map((_, i) => (
-                    <li key={i} aria-busy='true'>
-                      <Skeleton className='h-[4.5rem] w-full' />
-                    </li>
-                  ))}
-                {!loading && visibleQueue.length === 0 && (
+                {visibleOrders.length === 0 && (
                   <li className='py-8 text-center text-sm text-muted-foreground'>
                     No orders match &ldquo;{query.trim()}&rdquo;.
                   </li>
                 )}
-                {!loading &&
-                  visibleQueue.map((orderId) => {
-                    const header = headerOrders.find((h) => h.orderId === orderId)!;
-                    const list = detailsOf(orderId);
-                    const status = orderStatus(list);
-                    const done = list.filter((d) => d.status === 'Deliver').length;
-                    const active = orderId === selectedId;
-                    return (
-                      <li key={orderId}>
-                        <button
-                          type='button'
-                          aria-current={active}
-                          onClick={() => setSelectedId(orderId)}
-                          className='flex w-full flex-col gap-2 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 aria-[current=true]:border-primary aria-[current=true]:bg-primary/5'
-                        >
-                          <div className='flex items-center justify-between gap-2'>
-                            <span className='font-mono text-sm font-medium'>{orderId}</span>
-                            <Badge variant={status.variant}>{status.label}</Badge>
-                          </div>
-                          <div className='flex items-center justify-between gap-2 text-xs text-muted-foreground'>
-                            <span className='truncate'>{getMember(header.memberId).name}</span>
-                            <span className='shrink-0'>{formatDate(header.date)}</span>
-                          </div>
-                          <div className='flex items-center gap-2'>
+                {visibleOrders.map((o) => {
+                  const status = orderStatus(o.items);
+                  const done = o.items.filter((d) => d.status === 'Deliver').length;
+                  const active = o.orderId === selectedId;
+                  return (
+                    <li key={o.orderId}>
+                      <button
+                        type='button'
+                        aria-current={active}
+                        onClick={() => setSelectedId(o.orderId)}
+                        className='flex w-full flex-col gap-2 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 aria-[current=true]:border-primary aria-[current=true]:bg-primary/5'
+                      >
+                        <div className='flex items-center justify-between gap-2'>
+                          <span className='font-mono text-sm font-medium'>{o.orderId}</span>
+                          <Badge variant={status.variant}>{status.label}</Badge>
+                        </div>
+                        <div className='flex items-center justify-between gap-2 text-xs text-muted-foreground'>
+                          <span className='truncate'>{o.memberName}</span>
+                          <span className='shrink-0'>{formatDate(o.date)}</span>
+                        </div>
+                        <div className='flex items-center gap-2'>
+                          <div
+                            role='progressbar'
+                            aria-label='Dishes delivered'
+                            aria-valuemin={0}
+                            aria-valuemax={o.items.length}
+                            aria-valuenow={done}
+                            className='h-1.5 flex-1 overflow-hidden rounded-full bg-muted'
+                          >
                             <div
-                              role='progressbar'
-                              aria-label='Dishes delivered'
-                              aria-valuemin={0}
-                              aria-valuemax={list.length}
-                              aria-valuenow={done}
-                              className='h-1.5 flex-1 overflow-hidden rounded-full bg-muted'
-                            >
-                              <div
-                                className='h-full bg-primary transition-[width]'
-                                style={{
-                                  width: `${list.length ? (done / list.length) * 100 : 0}%`,
-                                }}
-                              />
-                            </div>
-                            <span className='text-xs text-muted-foreground tabular-nums'>
-                              {done}/{list.length}
-                            </span>
+                              className='h-full bg-primary transition-[width]'
+                              style={{
+                                width: `${o.items.length ? (done / o.items.length) * 100 : 0}%`,
+                              }}
+                            />
                           </div>
-                        </button>
-                      </li>
-                    );
-                  })}
+                          <span className='text-xs text-muted-foreground tabular-nums'>
+                            {done}/{o.items.length}
+                          </span>
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </CardContent>
           </Card>
@@ -291,20 +273,18 @@ export function ViewOrders() {
               </CardTitle>
               <CardDescription>
                 {selected
-                  ? `${getMember(selected.memberId).name} · ${formatDate(selected.date)} · taken by ${getEmployee(selected.employeeId).name}`
+                  ? `${selected.memberName} · ${formatDate(selected.date)} · taken by ${selected.cashierName}`
                   : 'Choose an order from the queue.'}
               </CardDescription>
             </CardHeader>
             <CardContent className='flex flex-col gap-4'>
-              {loading && <Skeleton className='h-48 w-full' />}
-
-              {!loading && !selected && (
+              {!selected && (
                 <p className='py-8 text-center text-sm text-muted-foreground'>
                   Select an order on the left to update its dishes.
                 </p>
               )}
 
-              {!loading && selected && (
+              {selected && (
                 <>
                   <div className='overflow-hidden rounded-lg border'>
                     <Table>
@@ -316,15 +296,14 @@ export function ViewOrders() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {selectedDetails.map((d) => {
-                          const menu = getMenu(d.menuId);
+                        {selectedItems.map((d) => {
                           const busy = saving.has(d.detailId);
                           return (
                             <TableRow key={d.detailId}>
                               <TableCell>
                                 <div className='flex items-center gap-3'>
-                                  <MenuPhoto menu={menu} />
-                                  <span className='font-medium'>{menu.name}</span>
+                                  <MenuPhoto menu={{ name: d.menuName, photo: d.photo }} />
+                                  <span className='font-medium'>{d.menuName}</span>
                                 </div>
                               </TableCell>
                               <TableCell className='text-right text-base font-semibold tabular-nums'>
@@ -344,7 +323,7 @@ export function ViewOrders() {
                                   >
                                     <SelectTrigger
                                       className='w-full'
-                                      aria-label={`Status of ${menu.name}`}
+                                      aria-label={`Status of ${d.menuName}`}
                                     >
                                       <span
                                         aria-hidden
@@ -370,9 +349,15 @@ export function ViewOrders() {
                     </Table>
                   </div>
 
+                  {error && (
+                    <p role='alert' className='text-sm text-destructive'>
+                      {error}
+                    </p>
+                  )}
+
                   <div className='flex flex-wrap items-center justify-between gap-3'>
                     <span className='text-sm text-muted-foreground'>
-                      {delivered} of {selectedDetails.length} dishes delivered
+                      {delivered} of {selectedItems.length} dishes delivered
                     </span>
                     <Button
                       disabled={

@@ -21,8 +21,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Spinner } from '@/components/ui/spinner';
 import {
   Table,
   TableBody,
@@ -32,15 +30,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  MONTHS,
-  formatMillion,
-  formatRupiah,
-  headerOrders,
-  incomeByMonth,
-  orderTotal,
-} from '@/lib/dummy-data';
-import { useFakeLoad, wait } from '@/lib/fake-api';
+import type { MonthlyStat, ReportDefaults } from '@/lib/data/reports';
+import { MONTHS, formatMillion, formatRupiah } from '@/lib/format';
 
 const monthItems = MONTHS.map((m, i) => ({ value: String(i), label: m }));
 
@@ -49,57 +40,53 @@ const chartConfig = { income: { label: 'Income', color: 'var(--primary)' } } sat
 
 type Range = { year: number; from: number; to: number };
 
-const yearOf = (date: string) => Number(date.slice(0, 4));
-const monthOf = (date: string) => Number(date.slice(5, 7)) - 1;
-
-/** Tahun yang punya order terbayar (terbaru dulu) dan bulan terakhir yang berisi order di tahun itu. */
-function reportDefaults() {
-  const paid = headerOrders.filter((h) => h.payment !== null);
-  const years = [...new Set(paid.map((h) => yearOf(h.date)))].sort((a: number, b: number) => b - a);
-  const year = years[0] ?? 2026;
-  const last = Math.max(0, ...paid.filter((h) => yearOf(h.date) === year).map((h) => monthOf(h.date)));
-  return { years: years.length ? years : [year], applied: { year, from: 0, to: last } as Range };
+/** Satu baris per bulan dalam rentang; bulan tanpa order tetap tampil dengan nilai 0. */
+function monthlyRows(stats: MonthlyStat[], year: number, from: number, to: number) {
+  const [start, end] = from <= to ? [from, to] : [to, from];
+  return MONTHS.slice(start, end + 1).map((month, i) => {
+    const stat = stats.find((s) => s.year === year && s.month === start + i);
+    return {
+      month,
+      income: stat?.income ?? 0,
+      orders: stat?.orders ?? 0,
+      unpaidOrders: stat?.unpaidOrders ?? 0,
+      unpaidAmount: stat?.unpaidAmount ?? 0,
+    };
+  });
 }
 
-export function Report() {
-  // Simulasi membaca data. Saat database siap: ganti dengan data dari server (props) seperti proyek pertama.
-  const loading = useFakeLoad('report');
-
-  const [defaults] = React.useState(reportDefaults);
-  const [year, setYear] = React.useState(String(defaults.applied.year));
-  const [from, setFrom] = React.useState(String(defaults.applied.from));
-  const [to, setTo] = React.useState(String(defaults.applied.to));
-  const [applied, setApplied] = React.useState<Range>(defaults.applied);
-  const [generating, setGenerating] = React.useState(false);
+export function Report({
+  stats,
+  years,
+  defaults,
+}: {
+  stats: MonthlyStat[];
+  years: number[];
+  defaults: ReportDefaults;
+}) {
+  // Data datang dari server (props) sebagai ringkasan per bulan; rentang diolah di browser, jadi Generate instan.
+  // Angka mengikuti kondisi saat halaman dibuka; muat ulang halaman untuk data terbaru.
+  const [year, setYear] = React.useState(String(defaults.year));
+  const [from, setFrom] = React.useState(String(defaults.from));
+  const [to, setTo] = React.useState(String(defaults.to));
+  const [applied, setApplied] = React.useState<Range>(defaults);
 
   const invalidRange = Number(from) > Number(to);
 
-  const generate = async () => {
+  const generate = () => {
     if (invalidRange) return;
-    setGenerating(true);
-    try {
-      await wait(400);
-      setApplied({ year: Number(year), from: Number(from), to: Number(to) });
-    } finally {
-      setGenerating(false);
-    }
+    setApplied({ year: Number(year), from: Number(from), to: Number(to) });
   };
 
-  const rows = incomeByMonth(applied.from, applied.to, applied.year);
+  const rows = monthlyRows(stats, applied.year, applied.from, applied.to);
   const totalIncome = rows.reduce((sum, r) => sum + r.income, 0);
   const totalOrders = rows.reduce((sum, r) => sum + r.orders, 0);
   const average = totalOrders ? Math.round(totalIncome / totalOrders) : 0;
   const best = rows.reduce((b, r) => (r.income > b.income ? r : b), rows[0]);
 
   // Order yang belum dibayar pada periode yang sama tidak masuk pendapatan
-  const unpaid = headerOrders.filter(
-    (h) =>
-      h.payment === null &&
-      yearOf(h.date) === applied.year &&
-      monthOf(h.date) >= applied.from &&
-      monthOf(h.date) <= applied.to,
-  );
-  const unpaidAmount = unpaid.reduce((sum, h) => sum + orderTotal(h.orderId), 0);
+  const unpaidCount = rows.reduce((sum, r) => sum + r.unpaidOrders, 0);
+  const unpaidAmount = rows.reduce((sum, r) => sum + r.unpaidAmount, 0);
 
   const rangeLabel =
     applied.from === applied.to
@@ -121,7 +108,7 @@ export function Report() {
             <Field className='w-32'>
               <FieldLabel>Year</FieldLabel>
               <Select
-                items={defaults.years.map((y) => ({ value: String(y), label: String(y) }))}
+                items={years.map((y) => ({ value: String(y), label: String(y) }))}
                 value={year}
                 onValueChange={(v) => v && setYear(v)}
               >
@@ -129,7 +116,7 @@ export function Report() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {defaults.years.map((y) => (
+                  {years.map((y) => (
                     <SelectItem key={y} value={String(y)}>
                       {y}
                     </SelectItem>
@@ -168,19 +155,19 @@ export function Report() {
                   ))}
                 </SelectContent>
               </Select>
-              {invalidRange && <FieldError>&ldquo;From&rdquo; cannot be after &ldquo;To&rdquo;.</FieldError>}
+              {invalidRange && (
+                <FieldError>&ldquo;From&rdquo; cannot be after &ldquo;To&rdquo;.</FieldError>
+              )}
             </Field>
 
-            <Button className='mt-[1.625rem]' disabled={generating || loading || invalidRange} onClick={generate}>
-              {generating && <Spinner />}
-              {generating ? 'Generating...' : 'Generate'}
+            <Button className='mt-[1.625rem]' disabled={invalidRange} onClick={generate}>
+              Generate
             </Button>
           </div>
         </CardContent>
       </Card>
 
       <StatCards
-        loading={loading || generating}
         items={[
           {
             label: 'Total Income',
@@ -196,7 +183,9 @@ export function Report() {
             icon: ReceiptTextIcon,
             badge: `${rows.length} ${rows.length === 1 ? 'month' : 'months'}`,
             title: 'Orders already paid',
-            note: unpaid.length ? `${unpaid.length} more still unpaid` : 'No unpaid orders in this period',
+            note: unpaidCount
+              ? `${unpaidCount} more still unpaid`
+              : 'No unpaid orders in this period',
           },
           {
             label: 'Average Order',
@@ -225,43 +214,43 @@ export function Report() {
             <CardDescription>{rangeLabel}</CardDescription>
           </CardHeader>
           <CardContent>
-            {loading || generating ? (
-              <Skeleton className='h-64 w-full' />
-            ) : (
-              <div className='overflow-hidden rounded-lg border'>
-                <Table>
-                  <TableHeader className='bg-muted'>
-                    <TableRow>
-                      <TableHead>Month</TableHead>
-                      <TableHead className='text-right'>Orders</TableHead>
-                      <TableHead className='text-right'>Income</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map((r) => (
-                      <TableRow key={r.month}>
-                        <TableCell className='font-medium'>{r.month}</TableCell>
-                        <TableCell className='text-right tabular-nums'>{r.orders}</TableCell>
-                        <TableCell className='text-right tabular-nums'>{formatRupiah(r.income)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                  <TableFooter>
-                    <TableRow>
-                      <TableCell className='font-medium'>Total</TableCell>
-                      <TableCell className='text-right font-medium tabular-nums'>{totalOrders}</TableCell>
-                      <TableCell className='text-right font-semibold tabular-nums'>
-                        {formatRupiah(totalIncome)}
+            <div className='overflow-hidden rounded-lg border'>
+              <Table>
+                <TableHeader className='bg-muted'>
+                  <TableRow>
+                    <TableHead>Month</TableHead>
+                    <TableHead className='text-right'>Orders</TableHead>
+                    <TableHead className='text-right'>Income</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((r) => (
+                    <TableRow key={r.month}>
+                      <TableCell className='font-medium'>{r.month}</TableCell>
+                      <TableCell className='text-right tabular-nums'>{r.orders}</TableCell>
+                      <TableCell className='text-right tabular-nums'>
+                        {formatRupiah(r.income)}
                       </TableCell>
                     </TableRow>
-                  </TableFooter>
-                </Table>
-              </div>
-            )}
-            {!loading && !generating && unpaid.length > 0 && (
+                  ))}
+                </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell className='font-medium'>Total</TableCell>
+                    <TableCell className='text-right font-medium tabular-nums'>
+                      {totalOrders}
+                    </TableCell>
+                    <TableCell className='text-right font-semibold tabular-nums'>
+                      {formatRupiah(totalIncome)}
+                    </TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
+            </div>
+            {unpaidCount > 0 && (
               <p className='mt-3 text-xs text-muted-foreground'>
-                {unpaid.length} unpaid {unpaid.length === 1 ? 'order' : 'orders'} ({formatRupiah(unpaidAmount)}) in this
-                period are not counted.
+                {unpaidCount} unpaid {unpaidCount === 1 ? 'order' : 'orders'} (
+                {formatRupiah(unpaidAmount)}) in this period are not counted.
               </p>
             )}
           </CardContent>
@@ -274,44 +263,42 @@ export function Report() {
             <CardDescription>Monthly income in millions of Rupiah (jt).</CardDescription>
           </CardHeader>
           <CardContent>
-            {loading || generating ? (
-              <Skeleton className='h-72 w-full' />
-            ) : (
-              <ChartContainer config={chartConfig} className='aspect-auto h-72 w-full'>
-                <BarChart data={chartData} margin={{ top: 24, right: 8, left: 0, bottom: 0 }}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis dataKey='short' tickLine={false} axisLine={false} tickMargin={8} />
-                  <YAxis
-                    width={44}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(v: number) => String(Math.round(v / 100000) / 10).replace('.', ',')}
-                  />
-                  <ChartTooltip
-                    cursor={false}
-                    content={
-                      <ChartTooltipContent
-                        labelFormatter={(_, payload) => payload?.[0]?.payload?.month}
-                        formatter={(value) => (
-                          <span className='font-mono font-medium tabular-nums'>
-                            {formatRupiah(Number(value))}
-                          </span>
-                        )}
-                      />
-                    }
-                  />
-                  <Bar dataKey='income' fill='var(--color-income)' radius={4}>
-                    <LabelList
-                      dataKey='income'
-                      position='top'
-                      className='fill-foreground'
-                      fontSize={12}
-                      formatter={(v: unknown) => formatMillion(Number(v))}
+            <ChartContainer config={chartConfig} className='aspect-auto h-72 w-full'>
+              <BarChart data={chartData} margin={{ top: 24, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid vertical={false} />
+                <XAxis dataKey='short' tickLine={false} axisLine={false} tickMargin={8} />
+                <YAxis
+                  width={44}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v: number) =>
+                    String(Math.round(v / 100000) / 10).replace('.', ',')
+                  }
+                />
+                <ChartTooltip
+                  cursor={false}
+                  content={
+                    <ChartTooltipContent
+                      labelFormatter={(_, payload) => payload?.[0]?.payload?.month}
+                      formatter={(value) => (
+                        <span className='font-mono font-medium tabular-nums'>
+                          {formatRupiah(Number(value))}
+                        </span>
+                      )}
                     />
-                  </Bar>
-                </BarChart>
-              </ChartContainer>
-            )}
+                  }
+                />
+                <Bar dataKey='income' fill='var(--color-income)' radius={4}>
+                  <LabelList
+                    dataKey='income'
+                    position='top'
+                    className='fill-foreground'
+                    fontSize={12}
+                    formatter={(v: unknown) => formatMillion(Number(v))}
+                  />
+                </Bar>
+              </BarChart>
+            </ChartContainer>
           </CardContent>
         </Card>
       </div>

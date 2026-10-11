@@ -3,6 +3,8 @@
 import * as React from 'react';
 import { PlusIcon, TagIcon, TrophyIcon, UploadIcon, UtensilsIcon } from 'lucide-react';
 
+import { createMenu, deleteMenu, updateMenu } from '@/actions/menus';
+import type { ActionResult } from '@/actions/result';
 import { MenuPhoto } from '@/components/menu-photo';
 import { SimpleDataTable, type Column } from '@/components/simple-data-table';
 import { StatCards } from '@/components/stat-cards';
@@ -18,23 +20,21 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
-import { detailOrders, formatRupiah, menus, nextMenuId, type Menu } from '@/lib/dummy-data';
-import { useFakeLoad, wait } from '@/lib/fake-api';
-
-// Nanti dipindah ke actions/result.ts saat Server Action dibuat (sama seperti proyek pertama).
-type ActionResult = { ok: true } | { ok: false; error: string };
-
-// Foto yang baru di-upload sementara ditampilkan lewat object URL (photoUrl).
-type MenuRow = Menu & { photoUrl?: string };
+import { uploadMenuPhoto } from '@/lib/cloudinary-upload';
+import { nextMenuNumber } from '@/lib/codes';
+import { formatRupiah } from '@/lib/format';
+import type { Menu } from '@/lib/types';
 
 // Di form harga berupa teks supaya bisa dikosongkan; diubah ke angka setelah lolos validasi.
-type MenuForm = Omit<MenuRow, 'price'> & { price: string };
+// `photo` = foto yang sudah tersimpan (url); file baru yang dipilih ditampung terpisah (state `file`).
+type MenuForm = Omit<Menu, 'price'> & { price: string };
 
+// Aturan file mengikuti server (lib/cloudinary.ts); server memeriksa ulang aset yang di-upload.
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 // columns berisi fungsi, jadi harus didefinisikan di file client
-const columns: Column<MenuRow>[] = [
+const columns: Column<Menu>[] = [
   { header: 'Photo', cell: (m) => <MenuPhoto menu={m} /> },
   { header: 'Menu ID', cell: (m) => m.menuId },
   { header: 'Name', cell: (m) => m.name, className: 'font-medium' },
@@ -44,8 +44,8 @@ const columns: Column<MenuRow>[] = [
 type FieldKey = 'name' | 'price' | 'photo';
 type Errors = Partial<Record<FieldKey, string>>;
 
-// Batas panjang mengikuti data dictionary: Name 50, Photo 100.
-function validate(form: MenuForm, others: MenuRow[]): Errors {
+// Batas panjang mengikuti data dictionary: Name 50.
+function validate(form: MenuForm, hasNewFile: boolean, others: Menu[]): Errors {
   const errors: Errors = {};
 
   const name = form.name.trim();
@@ -56,10 +56,12 @@ function validate(form: MenuForm, others: MenuRow[]): Errors {
   if (!form.price) errors.price = 'Price is required.';
   else if (Number(form.price) <= 0) errors.price = 'Price must be greater than 0.';
 
-  if (!form.photo) errors.photo = 'Photo is required.';
+  if (!form.photo && !hasNewFile) errors.photo = 'Photo is required.';
 
   return errors;
 }
+
+type Stage = 'uploading' | 'saving' | null;
 
 /** Satu form untuk Insert dan Update. Save / Cancel hanya ada selama mode insert/edit aktif. */
 function MenuFormSheet({
@@ -71,24 +73,31 @@ function MenuFormSheet({
 }: {
   mode: 'insert' | 'update';
   menu: MenuForm;
-  allMenus: MenuRow[];
-  onSave: (m: MenuRow) => Promise<ActionResult>;
+  allMenus: Menu[];
+  onSave: (input: {
+    menuId: number;
+    name: string;
+    price: number;
+    photoPublicId?: string;
+  }) => Promise<ActionResult>;
   onClose: () => void;
 }) {
   const [form, setForm] = React.useState<MenuForm>(menu);
+  const [file, setFile] = React.useState<File | null>(null);
+  const [preview, setPreview] = React.useState<string | undefined>();
   const [touched, setTouched] = React.useState<Partial<Record<FieldKey, boolean>>>({});
   const [submitted, setSubmitted] = React.useState(false);
-  const [saving, setSaving] = React.useState(false);
+  const [stage, setStage] = React.useState<Stage>(null);
   const [error, setError] = React.useState('');
   const [fileError, setFileError] = React.useState('');
   const fileInput = React.useRef<HTMLInputElement>(null);
+  const saving = stage !== null;
 
-  // Object URL yang dibuat di form ini; dilepas bila tidak jadi disimpan (diganti / Cancel).
-  const createdUrl = React.useRef<string | null>(null);
-  const saved = React.useRef(false);
+  // Pratinjau (object URL) hanya dipakai di form ini; setelah disimpan tabel memakai url dari server.
+  const previewUrl = React.useRef<string | null>(null);
   React.useEffect(
     () => () => {
-      if (!saved.current && createdUrl.current) URL.revokeObjectURL(createdUrl.current);
+      if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
     },
     [],
   );
@@ -100,26 +109,26 @@ function MenuFormSheet({
   const touch = (key: FieldKey) => setTouched((t) => ({ ...t, [key]: true }));
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const picked = e.target.files?.[0];
     e.target.value = ''; // supaya memilih file yang sama dua kali tetap memicu onChange
-    if (!file) return;
+    if (!picked) return;
     touch('photo');
 
-    if (!PHOTO_TYPES.includes(file.type))
+    if (!PHOTO_TYPES.includes(picked.type))
       return setFileError('Photo must be a JPG, PNG or WEBP image.');
-    if (file.size > MAX_PHOTO_BYTES) return setFileError('Photo must be 2 MB or smaller.');
-    if (file.name.length > 100) return setFileError('File name must be at most 100 characters.');
+    if (picked.size > MAX_PHOTO_BYTES) return setFileError('Photo must be 2 MB or smaller.');
 
-    if (createdUrl.current) URL.revokeObjectURL(createdUrl.current);
-    const url = URL.createObjectURL(file);
-    createdUrl.current = url;
+    if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
+    const url = URL.createObjectURL(picked);
+    previewUrl.current = url;
     setFileError('');
-    setForm((f) => ({ ...f, photo: file.name, photoUrl: url }));
+    setFile(picked);
+    setPreview(url);
     setError('');
   };
 
   const others = allMenus.filter((m) => m.menuId !== menu.menuId);
-  const errors = validate(form, others);
+  const errors = validate(form, Boolean(file), others);
   // Pesan error baru muncul setelah field disentuh atau Save ditekan
   const shown = (key: FieldKey) => (submitted || touched[key] ? errors[key] : undefined);
   const photoError = fileError || shown('photo');
@@ -128,28 +137,39 @@ function MenuFormSheet({
     setSubmitted(true);
     if (Object.keys(errors).length > 0 || fileError) return;
 
-    setSaving(true);
     setError('');
     try {
+      // 1) File baru: kirim langsung ke Cloudinary (tidak lewat server kita)
+      let photoPublicId: string | undefined;
+      if (file) {
+        setStage('uploading');
+        const uploaded = await uploadMenuPhoto(file);
+        if (!uploaded.ok) {
+          setError(uploaded.error);
+          return;
+        }
+        photoPublicId = uploaded.publicId;
+      }
+
+      // 2) Simpan menu; server memeriksa aset itu lalu mengisi url foto
+      setStage('saving');
       const result = await onSave({
         menuId: form.menuId,
         name: form.name.trim(),
         price: Number(form.price),
-        photo: form.photo,
-        photoUrl: form.photoUrl,
+        photoPublicId,
       });
-      if (result.ok) {
-        saved.current = true; // object URL dipakai tabel, jangan dilepas
-        onClose();
-      } else setError(result.error);
+      if (result.ok) onClose();
+      else setError(result.error);
     } catch {
       setError('Network error. Please try again.');
     } finally {
-      setSaving(false);
+      setStage(null);
     }
   };
 
   const priceNumber = Number(form.price);
+  const photoLabel = file ? file.name : form.photo ? 'Current photo' : '';
 
   return (
     <Sheet open onOpenChange={(open) => !open && !saving && onClose()}>
@@ -167,17 +187,25 @@ function MenuFormSheet({
           <FieldGroup>
             <Field data-invalid={Boolean(photoError)}>
               <FieldLabel>Photo</FieldLabel>
-              <MenuPhoto menu={{ ...form }} className='aspect-video h-auto w-full' />
+              <MenuPhoto
+                menu={{ name: form.name, photo: form.photo, photoUrl: preview }}
+                className='aspect-video h-auto w-full'
+              />
               <div className='flex items-center gap-2'>
                 <Input
                   readOnly
                   tabIndex={-1}
-                  value={form.photo}
+                  value={photoLabel}
                   placeholder='No file chosen'
                   aria-label='Photo file name'
                   aria-invalid={Boolean(photoError)}
                 />
-                <Button type='button' variant='outline' onClick={() => fileInput.current?.click()}>
+                <Button
+                  type='button'
+                  variant='outline'
+                  disabled={saving}
+                  onClick={() => fileInput.current?.click()}
+                >
                   <UploadIcon />
                   Browse
                 </Button>
@@ -192,7 +220,9 @@ function MenuFormSheet({
               {photoError ? (
                 <FieldError>{photoError}</FieldError>
               ) : (
-                <FieldDescription>JPG, PNG or WEBP, up to 2 MB.</FieldDescription>
+                <FieldDescription>
+                  JPG, PNG or WEBP, up to 2 MB. The photo is uploaded when you press Save.
+                </FieldDescription>
               )}
             </Field>
 
@@ -246,7 +276,11 @@ function MenuFormSheet({
         <SheetFooter className='border-t'>
           <Button disabled={saving} onClick={submit}>
             {saving && <Spinner />}
-            {saving ? 'Saving...' : 'Save'}
+            {stage === 'uploading'
+              ? 'Uploading photo...'
+              : stage === 'saving'
+                ? 'Saving...'
+                : 'Save'}
           </Button>
           <Button variant='outline' disabled={saving} onClick={onClose}>
             Cancel
@@ -259,65 +293,40 @@ function MenuFormSheet({
 
 type SheetState = { mode: 'insert' | 'update'; menu: MenuForm };
 
-const revokeIfBlob = (url?: string) => {
-  if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
-};
-
-export function MenuTable() {
-  // Simulasi membaca data. Saat database siap: ganti dengan data dari server (props) seperti proyek pertama.
-  const loading = useFakeLoad('menus');
-  const [data, setData] = React.useState<MenuRow[]>(menus);
+export function MenuTable({
+  initialData,
+  soldByMenu,
+}: {
+  initialData: Menu[];
+  /** Jumlah porsi terjual per menu, kunci = MenuID */
+  soldByMenu: Record<number, number>;
+}) {
+  // Data datang dari server (props). Setelah Server Action memanggil revalidatePath,
+  // Next.js mengirim props baru sehingga tabel dan kartu ikut ter-update.
+  const data = initialData;
   const [sheet, setSheet] = React.useState<SheetState | null>(null);
-
-  // Menu yang pernah dipesan tidak boleh dihapus (FK detailorder.menuid) dan jumlah terjual per menu.
-  const soldByMenu = React.useMemo(() => {
-    const sold = new Map<number, number>();
-    for (const d of detailOrders) sold.set(d.menuId, (sold.get(d.menuId) ?? 0) + d.qty);
-    return sold;
-  }, []);
 
   const total = data.length;
   const average = total ? Math.round(data.reduce((s, m) => s + m.price, 0) / total) : 0;
-  const soldOf = (m: MenuRow) => soldByMenu.get(m.menuId) ?? 0;
-  const bestSeller = data.reduce<MenuRow | null>(
+  const soldOf = (m: Menu) => soldByMenu[m.menuId] ?? 0;
+  const bestSeller = data.reduce<Menu | null>(
     (best, m) => (soldOf(m) > (best ? soldOf(best) : 0) ? m : best),
     null,
   );
-  const cheapest = data.reduce<MenuRow | null>((c, m) => (!c || m.price < c.price ? m : c), null);
+  const cheapest = data.reduce<Menu | null>((c, m) => (!c || m.price < c.price ? m : c), null);
 
   const openInsert = () =>
     setSheet({
       mode: 'insert',
-      menu: { menuId: nextMenuId(data), name: '', price: '', photo: '' },
+      // Hanya pratinjau; MenuID yang sebenarnya ditentukan server saat menyimpan
+      menu: { menuId: nextMenuNumber(data.map((m) => m.menuId)), name: '', price: '', photo: '' },
     });
-  const openUpdate = (menu: MenuRow) =>
+  const openUpdate = (menu: Menu) =>
     setSheet({ mode: 'update', menu: { ...menu, price: String(menu.price) } });
-
-  const createMenu = async (m: MenuRow): Promise<ActionResult> => {
-    await wait();
-    setData((d) => [...d, m]);
-    return { ok: true };
-  };
-  const updateMenu = async (m: MenuRow): Promise<ActionResult> => {
-    await wait();
-    const before = data.find((x) => x.menuId === m.menuId);
-    if (before && before.photoUrl !== m.photoUrl) revokeIfBlob(before.photoUrl);
-    setData((d) => d.map((x) => (x.menuId === m.menuId ? m : x)));
-    return { ok: true };
-  };
-  const deleteMenu = async (m: MenuRow): Promise<ActionResult> => {
-    await wait();
-    if (soldByMenu.has(m.menuId))
-      return { ok: false, error: `${m.name} is already part of an order and cannot be deleted.` };
-    revokeIfBlob(m.photoUrl);
-    setData((d) => d.filter((x) => x.menuId !== m.menuId));
-    return { ok: true };
-  };
 
   return (
     <div className='flex flex-col gap-3 md:gap-3'>
       <StatCards
-        loading={loading}
         items={[
           {
             label: 'Total Menus',
@@ -349,14 +358,13 @@ export function MenuTable() {
       <SimpleDataTable
         data={data}
         columns={columns}
-        loading={loading}
         getRowId={(m) => String(m.menuId)}
         getRowLabel={(m) => m.name}
         searchText={(m) => `${m.menuId} ${m.name} ${m.price}`}
         onEdit={openUpdate}
-        onDelete={deleteMenu}
+        onDelete={(m) => deleteMenu(m.menuId)}
         toolbarActions={
-          <Button disabled={loading} onClick={openInsert}>
+          <Button onClick={openInsert}>
             <PlusIcon />
             Insert
           </Button>

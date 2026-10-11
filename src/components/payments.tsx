@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useRouter } from 'next/navigation';
 import {
   BanknoteIcon,
   CircleCheckIcon,
@@ -25,7 +26,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import {
   Table,
@@ -36,22 +36,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  BANKS,
-  PAYMENT_TYPES,
-  detailsOf,
-  formatDate,
-  formatRupiah,
-  getMember,
-  getMenu,
-  headerOrders,
-  orderTotal,
-  setPayment,
-  type Bank,
-  type HeaderOrder,
-  type PaymentType,
-} from '@/lib/dummy-data';
-import { useFakeLoad, wait } from '@/lib/fake-api';
+import { payOrder } from '@/actions/payments';
+import type { PaymentOrder } from '@/lib/data/payments';
+import { BANKS, PAYMENT_TYPES, type Bank, type PaymentType } from '@/lib/validations';
+import { formatDate, formatRupiah } from '@/lib/format';
 
 const paymentItems = PAYMENT_TYPES.map((t) => ({ value: t, label: t }));
 const bankItems = BANKS.map((b) => ({ value: b, label: b }));
@@ -69,6 +57,11 @@ type Receipt = {
   bank: Bank | null;
   received: number | null; // hanya Cash
 };
+
+/** Yang dikirim ke server. Nomor kartu tidak ikut: hanya diperiksa di browser. */
+type PayInput =
+  | { payment: 'Cash'; received: number }
+  | { payment: 'Credit Card' | 'Debit Card'; bank: Bank };
 
 type Form = { type: PaymentType | ''; card: string; bank: Bank | ''; received: string };
 type FieldKey = keyof Form;
@@ -143,14 +136,23 @@ function ReceiptView({
 }
 
 /** Form pembayaran satu order. Di-key per orderId sehingga ganti order = form bersih. */
-function PaymentForm({ total, onPay }: { total: number; onPay: (r: Receipt) => Promise<void> }) {
+function PaymentForm({
+  total,
+  onPay,
+}: {
+  total: number;
+  onPay: (input: PayInput) => Promise<string | undefined>;
+}) {
   const [form, setForm] = React.useState<Form>({ type: '', card: '', bank: '', received: '' });
   const [touched, setTouched] = React.useState<Partial<Record<FieldKey, boolean>>>({});
   const [submitted, setSubmitted] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
+  const [serverError, setServerError] = React.useState('');
 
-  const set = <K extends FieldKey>(key: K, value: Form[K]) =>
+  const set = <K extends FieldKey>(key: K, value: Form[K]) => {
     setForm((f) => ({ ...f, [key]: value }));
+    setServerError('');
+  };
   const touch = (key: FieldKey) => setTouched((t) => ({ ...t, [key]: true }));
 
   const errors = validate(form, total);
@@ -162,15 +164,17 @@ function PaymentForm({ total, onPay }: { total: number; onPay: (r: Receipt) => P
 
   const submit = async () => {
     setSubmitted(true);
+    setServerError('');
     if (Object.keys(errors).length > 0 || !form.type) return;
     setSaving(true);
     try {
-      await onPay({
-        total,
-        payment: form.type,
-        bank: isCard(form.type) ? form.bank || null : null,
-        received: isCard(form.type) ? null : received,
-      });
+      const input: PayInput = isCard(form.type)
+        ? { payment: form.type as 'Credit Card' | 'Debit Card', bank: form.bank as Bank }
+        : { payment: 'Cash', received };
+      const error = await onPay(input);
+      if (error) setServerError(error);
+    } catch {
+      setServerError('Network error. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -189,6 +193,7 @@ function PaymentForm({ total, onPay }: { total: number; onPay: (r: Receipt) => P
             setForm({ type: v as PaymentType, card: '', bank: '', received: '' });
             setTouched({});
             setSubmitted(false);
+            setServerError('');
           }}
         >
           <SelectTrigger
@@ -303,6 +308,12 @@ function PaymentForm({ total, onPay }: { total: number; onPay: (r: Receipt) => P
         </Field>
       )}
 
+      {serverError && (
+        <p role='alert' className='text-sm text-destructive'>
+          {serverError}
+        </p>
+      )}
+
       <Button disabled={saving} onClick={submit}>
         {saving && <Spinner />}
         {saving ? 'Saving...' : 'Save Payment'}
@@ -311,57 +322,81 @@ function PaymentForm({ total, onPay }: { total: number; onPay: (r: Receipt) => P
   );
 }
 
-export function Payments() {
-  // Simulasi membaca data. Saat database siap: ganti dengan data dari server (props) seperti proyek pertama.
-  const loading = useFakeLoad('payments');
+// Papan kasir diperbarui otomatis supaya order baru dan status dapur selalu terbaru.
+const REFRESH_MS = 15_000;
 
-  // Antrian = order yang belum dibayar saat halaman dibuka. Order yang baru dibayar tetap tampil
-  // (berlabel Paid) supaya struknya masih bisa dilihat. Order boleh dibayar walau dapur belum selesai.
-  const [queue] = React.useState<HeaderOrder[]>(() =>
-    headerOrders.filter((h) => h.payment === null),
-  );
-  const [receipts, setReceipts] = React.useState<Record<string, Receipt>>({});
-  const [selectedId, setSelectedId] = React.useState<string>(() => queue[0]?.orderId ?? '');
+type PaidSnapshot = { order: PaymentOrder; receipt: Receipt };
+
+export function Payments({ initialOrders }: { initialOrders: PaymentOrder[] }) {
+  const router = useRouter();
+
+  // Order yang baru dibayar hilang dari data server, tetapi tetap ditampilkan (berlabel Paid)
+  // supaya struknya masih bisa dilihat; snapshot-nya disimpan di browser sampai halaman ditinggalkan.
+  // Order boleh dibayar walau dapur belum selesai.
+  const [paid, setPaid] = React.useState<Record<string, PaidSnapshot>>({});
+  const [selectedId, setSelectedId] = React.useState<string>(() => initialOrders[0]?.orderId ?? '');
   const [query, setQuery] = React.useState('');
 
-  const kitchen = (orderId: string) => {
-    const list = detailsOf(orderId);
-    return { done: list.filter((d) => d.status === 'Deliver').length, total: list.length };
-  };
+  // Muat ulang data berkala selama tab terlihat; form dan pilihan order tidak hilang
+  React.useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') router.refresh();
+    }, REFRESH_MS);
+    return () => clearInterval(id);
+  }, [router]);
 
-  const unpaid = queue.filter((h) => !receipts[h.orderId]);
-  const outstanding = unpaid.reduce((sum, h) => sum + orderTotal(h.orderId), 0);
-  const ready = unpaid.filter((h) => kitchen(h.orderId).done === kitchen(h.orderId).total).length;
+  const queue = [
+    ...initialOrders.filter((o) => !paid[o.orderId]),
+    ...Object.values(paid).map((p) => p.order),
+  ].sort((a, b) => a.orderId.localeCompare(b.orderId));
+
+  const kitchen = (o: PaymentOrder) => ({
+    done: o.items.filter((d) => d.status === 'Deliver').length,
+    total: o.items.length,
+  });
+
+  const unpaid = queue.filter((o) => !paid[o.orderId]);
+  const outstanding = unpaid.reduce((sum, o) => sum + o.total, 0);
+  const ready = unpaid.filter((o) => kitchen(o).done === kitchen(o).total).length;
 
   // Pencarian: Order ID, ID/nama member, atau total (mis. 385000 atau 385.000)
   const needle = query.trim().toLowerCase();
   const visibleQueue = needle
-    ? queue.filter((h) => {
-        const member = getMember(h.memberId);
-        const total = orderTotal(h.orderId);
-        return `${h.orderId} ${member.memberId} ${member.name} ${total} ${formatRupiah(total)}`
+    ? queue.filter((o) =>
+        `${o.orderId} ${o.memberId} ${o.memberName} ${o.total} ${formatRupiah(o.total)}`
           .toLowerCase()
-          .includes(needle);
-      })
+          .includes(needle),
+      )
     : queue;
 
-  const selected = queue.find((h) => h.orderId === selectedId);
-  const selectedDetails = selected ? detailsOf(selected.orderId) : [];
-  const selectedTotal = selected ? orderTotal(selected.orderId) : 0;
-  const selectedKitchen = selected ? kitchen(selected.orderId) : { done: 0, total: 0 };
-  const receipt = selected ? receipts[selected.orderId] : undefined;
-  const nextUnpaid = unpaid.find((h) => h.orderId !== selectedId);
+  const selected = queue.find((o) => o.orderId === selectedId);
+  const selectedKitchen = selected ? kitchen(selected) : { done: 0, total: 0 };
+  const receipt = selected ? paid[selected.orderId]?.receipt : undefined;
+  const nextUnpaid = unpaid.find((o) => o.orderId !== selectedId);
 
-  const pay = async (orderId: string, r: Receipt) => {
-    await wait();
-    setPayment(orderId, r.payment, r.bank); // pengganti UPDATE headerorder
-    setReceipts((all) => ({ ...all, [orderId]: r }));
+  /** Mengembalikan pesan error (untuk ditampilkan di form), atau undefined bila berhasil. */
+  const pay = async (order: PaymentOrder, input: PayInput): Promise<string | undefined> => {
+    const result = await payOrder({ orderId: order.orderId, ...input });
+    if (!result.ok) return result.error;
+    const isCash = input.payment === 'Cash';
+    setPaid((all) => ({
+      ...all,
+      [order.orderId]: {
+        order,
+        receipt: {
+          total: result.total,
+          payment: input.payment,
+          bank: 'bank' in input ? input.bank : null,
+          received: isCash ? input.received : null,
+        },
+      },
+    }));
+    return undefined;
   };
 
   return (
     <div className='flex flex-col gap-3 md:gap-3'>
       <StatCards
-        loading={loading}
         items={[
           {
             label: 'Unpaid Orders',
@@ -390,7 +425,7 @@ export function Payments() {
         ]}
       />
 
-      {!loading && queue.length === 0 ? (
+      {queue.length === 0 ? (
         <Card>
           <CardContent className='flex flex-col items-center gap-2 py-16 text-center'>
             <CircleCheckIcon className='size-8 text-primary' />
@@ -404,7 +439,9 @@ export function Payments() {
           <Card>
             <CardHeader>
               <CardTitle>Unpaid Orders</CardTitle>
-              <CardDescription>Choose an order to take payment.</CardDescription>
+              <CardDescription>
+                Choose an order to take payment. Updates every 15 seconds.
+              </CardDescription>
             </CardHeader>
             <CardContent className='flex flex-col gap-3'>
               <div className='relative'>
@@ -414,7 +451,6 @@ export function Payments() {
                   placeholder='Search order or member...'
                   aria-label='Search unpaid orders'
                   value={query}
-                  disabled={loading}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={(e) => {
                     // Enter memilih hasil pertama, Escape menghapus pencarian
@@ -435,58 +471,51 @@ export function Payments() {
                   </Button>
                 )}
               </div>
-              {needle && !loading && (
+              {needle && (
                 <p className='text-xs text-muted-foreground' aria-live='polite'>
                   {visibleQueue.length} of {queue.length} orders
                 </p>
               )}
               <ul className='flex max-h-[28rem] flex-col gap-2 overflow-y-auto lg:max-h-[32rem]'>
-                {loading &&
-                  Array.from({ length: 4 }).map((_, i) => (
-                    <li key={i} aria-busy='true'>
-                      <Skeleton className='h-[4.5rem] w-full' />
-                    </li>
-                  ))}
-                {!loading && visibleQueue.length === 0 && (
+                {visibleQueue.length === 0 && (
                   <li className='py-8 text-center text-sm text-muted-foreground'>
                     No orders match &ldquo;{query.trim()}&rdquo;.
                   </li>
                 )}
-                {!loading &&
-                  visibleQueue.map((h) => {
-                    const k = kitchen(h.orderId);
-                    const paid = Boolean(receipts[h.orderId]);
-                    return (
-                      <li key={h.orderId}>
-                        <button
-                          type='button'
-                          aria-current={h.orderId === selectedId}
-                          onClick={() => setSelectedId(h.orderId)}
-                          className='flex w-full flex-col gap-2 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 aria-[current=true]:border-primary aria-[current=true]:bg-primary/5'
-                        >
-                          <div className='flex items-center justify-between gap-2'>
-                            <span className='font-mono text-sm font-medium'>{h.orderId}</span>
-                            {paid ? (
-                              <Badge>Paid</Badge>
-                            ) : k.done === k.total ? (
-                              <Badge variant='outline'>Kitchen done</Badge>
-                            ) : (
-                              <Badge variant='secondary'>
-                                {k.done}/{k.total} delivered
-                              </Badge>
-                            )}
-                          </div>
-                          <div className='flex items-center justify-between gap-2 text-xs text-muted-foreground'>
-                            <span className='truncate'>{getMember(h.memberId).name}</span>
-                            <span className='shrink-0'>{formatDate(h.date)}</span>
-                          </div>
-                          <span className='text-sm font-semibold tabular-nums'>
-                            {formatRupiah(orderTotal(h.orderId))}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
+                {visibleQueue.map((o) => {
+                  const k = kitchen(o);
+                  const isPaid = Boolean(paid[o.orderId]);
+                  return (
+                    <li key={o.orderId}>
+                      <button
+                        type='button'
+                        aria-current={o.orderId === selectedId}
+                        onClick={() => setSelectedId(o.orderId)}
+                        className='flex w-full flex-col gap-2 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 aria-[current=true]:border-primary aria-[current=true]:bg-primary/5'
+                      >
+                        <div className='flex items-center justify-between gap-2'>
+                          <span className='font-mono text-sm font-medium'>{o.orderId}</span>
+                          {isPaid ? (
+                            <Badge>Paid</Badge>
+                          ) : k.done === k.total ? (
+                            <Badge variant='outline'>Kitchen done</Badge>
+                          ) : (
+                            <Badge variant='secondary'>
+                              {k.done}/{k.total} delivered
+                            </Badge>
+                          )}
+                        </div>
+                        <div className='flex items-center justify-between gap-2 text-xs text-muted-foreground'>
+                          <span className='truncate'>{o.memberName}</span>
+                          <span className='shrink-0'>{formatDate(o.date)}</span>
+                        </div>
+                        <span className='text-sm font-semibold tabular-nums'>
+                          {formatRupiah(o.total)}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </CardContent>
           </Card>
@@ -506,20 +535,18 @@ export function Payments() {
               </CardTitle>
               <CardDescription>
                 {selected
-                  ? `${getMember(selected.memberId).name} · ${formatDate(selected.date)}`
+                  ? `${selected.memberName} · ${formatDate(selected.date)}`
                   : 'Choose an order from the list.'}
               </CardDescription>
             </CardHeader>
             <CardContent className='flex flex-col gap-4'>
-              {loading && <Skeleton className='h-64 w-full' />}
-
-              {!loading && !selected && (
+              {!selected && (
                 <p className='py-8 text-center text-sm text-muted-foreground'>
                   Select an order on the left to see its items.
                 </p>
               )}
 
-              {!loading && selected && (
+              {selected && (
                 <>
                   <div className='overflow-hidden rounded-lg border'>
                     <Table>
@@ -532,26 +559,23 @@ export function Payments() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {selectedDetails.map((d) => {
-                          const menu = getMenu(d.menuId);
-                          return (
-                            <TableRow key={d.detailId}>
-                              <TableCell>
-                                <div className='flex items-center gap-3'>
-                                  <MenuPhoto menu={menu} />
-                                  <span className='font-medium'>{menu.name}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className='text-right tabular-nums'>{d.qty}</TableCell>
-                              <TableCell className='text-right tabular-nums'>
-                                {formatRupiah(d.price)}
-                              </TableCell>
-                              <TableCell className='text-right font-medium tabular-nums'>
-                                {formatRupiah(d.qty * d.price)}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
+                        {selected.items.map((d) => (
+                          <TableRow key={d.detailId}>
+                            <TableCell>
+                              <div className='flex items-center gap-3'>
+                                <MenuPhoto menu={{ name: d.menuName, photo: d.photo }} />
+                                <span className='font-medium'>{d.menuName}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className='text-right tabular-nums'>{d.qty}</TableCell>
+                            <TableCell className='text-right tabular-nums'>
+                              {formatRupiah(d.price)}
+                            </TableCell>
+                            <TableCell className='text-right font-medium tabular-nums'>
+                              {formatRupiah(d.qty * d.price)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
                       </TableBody>
                       <TableFooter>
                         <TableRow>
@@ -559,7 +583,7 @@ export function Payments() {
                             Total
                           </TableCell>
                           <TableCell className='text-right text-base font-semibold tabular-nums'>
-                            {formatRupiah(selectedTotal)}
+                            {formatRupiah(selected.total)}
                           </TableCell>
                         </TableRow>
                       </TableFooter>
@@ -589,8 +613,8 @@ export function Payments() {
                       )}
                       <PaymentForm
                         key={selected.orderId}
-                        total={selectedTotal}
-                        onPay={(r) => pay(selected.orderId, r)}
+                        total={selected.total}
+                        onPay={(input) => pay(selected, input)}
                       />
                     </>
                   )}

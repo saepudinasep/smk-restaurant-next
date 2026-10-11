@@ -3,13 +3,16 @@
 import * as React from 'react';
 import { ImageIcon } from 'lucide-react';
 
+import { optimizeCloudinary, resolvePhotoSrc } from '@/lib/photo';
 import { cn } from '@/lib/utils';
 
-// Foto bawaan diambil dari /public/menus/<nama-file>. Foto yang baru di-upload sementara
-// ditampilkan lewat object URL (photoUrl) sampai ada penyimpanan sungguhan (mis. Cloudinary).
-const PHOTO_DIR = '/menus';
-
-export type MenuPhotoSource = { name: string; photo: string; photoUrl?: string };
+export type MenuPhotoSource = {
+  name: string;
+  /** Nilai kolom photo: url Cloudinary, path lokal, atau nama file di /public/menus */
+  photo: string;
+  /** Pratinjau sementara (object URL) saat file baru dipilih di form, sebelum disimpan */
+  photoUrl?: string;
+};
 
 /** Foto menu; kalau file tidak ditemukan tampil placeholder, bukan gambar rusak. */
 export function MenuPhoto({
@@ -19,7 +22,7 @@ export function MenuPhoto({
   menu: MenuPhotoSource;
   className?: string;
 }) {
-  const src = menu.photoUrl ?? (menu.photo ? `${PHOTO_DIR}/${menu.photo}` : '');
+  const src = menu.photoUrl ?? optimizeCloudinary(resolvePhotoSrc(menu.photo));
   const [failedSrc, setFailedSrc] = React.useState('');
 
   if (!src || failedSrc === src) {
@@ -37,7 +40,7 @@ export function MenuPhoto({
     );
   }
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- object URL / file lokal, tidak cocok untuk next/image
+    // eslint-disable-next-line @next/next/no-img-element -- url Cloudinary / object URL, tidak memakai next/image
     <img
       src={src}
       alt={menu.name}

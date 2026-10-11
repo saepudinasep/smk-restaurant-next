@@ -17,13 +17,15 @@ import {
 import { CommandIcon } from 'lucide-react';
 import { navMain } from '@/config/nav';
 import { ROLE_HOME, filterNavByRole, type RoleName } from '@/lib/access';
-import { currentProfile, sidebarUser } from '@/lib/current-user';
+import { useCurrentUser } from '@/hooks/use-current-user';
 
-// `role` nanti diisi dari sesi login (mis. session.user.role); sementara memakai pengguna dummy.
+// Peran & identitas diambil dari sesi login (Auth.js). Prop `role` hanya untuk menimpa saat uji.
 export function AppSidebar({
-  role = currentProfile.position,
+  role: roleOverride,
   ...props
 }: React.ComponentProps<typeof Sidebar> & { role?: RoleName }) {
+  const me = useCurrentUser();
+  const role = roleOverride ?? me?.role;
   const items = filterNavByRole(role, navMain);
   return (
     <Sidebar collapsible='offcanvas' {...props}>
@@ -32,7 +34,7 @@ export function AppSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton
               className='data-[slot=sidebar-menu-button]:p-1.5!'
-              render={<Link href={ROLE_HOME[role]} />}
+              render={<Link href={role ? ROLE_HOME[role] : '/'} />}
             >
               <CommandIcon className='size-5!' />
               <span className='text-base font-semibold'>SMK Restaurant</span>
@@ -44,7 +46,7 @@ export function AppSidebar({
         <NavMain items={items.map(({ icon: Icon, ...item }) => ({ ...item, icon: <Icon /> }))} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={sidebarUser()} />
+        <NavUser user={{ name: me?.name ?? '', email: me?.email ?? '', avatar: '' }} />
       </SidebarFooter>
     </Sidebar>
   );
