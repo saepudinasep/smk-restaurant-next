@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { BanknoteIcon, ClockIcon, ReceiptTextIcon, UsersIcon } from 'lucide-react';
 
+import { CategorySales } from '@/components/category-sales';
 import { MenuPhoto } from '@/components/menu-photo';
 import { OrderStatusBadge } from '@/components/order-status-badge';
 import { StatCards } from '@/components/stat-cards';
@@ -53,6 +54,7 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
     lastMonth,
     top,
     recent,
+    categories,
   } = data;
 
   const monthly = data.monthly.map((r) => ({
@@ -102,62 +104,86 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
       />
 
       <div className='grid items-start gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]'>
-        {/* Pendapatan per bulan */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Monthly Income</CardTitle>
-            <CardDescription>
-              {MONTHS[0]} - {MONTHS[lastMonth]} {latestYear}, in millions of Rupiah
-            </CardDescription>
-            <CardAction>
-              <Link href='/reports' className={buttonVariants({ variant: 'outline', size: 'sm' })}>
-                View report
-              </Link>
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            <ChartContainer config={chartConfig} className='aspect-auto h-64 w-full'>
-              <AreaChart data={monthly} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id='fillIncome' x1='0' y1='0' x2='0' y2='1'>
-                    <stop offset='5%' stopColor='var(--color-income)' stopOpacity={0.6} />
-                    <stop offset='95%' stopColor='var(--color-income)' stopOpacity={0.05} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey='short' tickLine={false} axisLine={false} tickMargin={8} />
-                <YAxis
-                  width={44}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v: number) =>
-                    String(Math.round(v / 100000) / 10).replace('.', ',')
-                  }
-                />
-                <ChartTooltip
-                  cursor={false}
-                  content={
-                    <ChartTooltipContent
-                      labelFormatter={(_, payload) => payload?.[0]?.payload?.month}
-                      formatter={(value) => (
-                        <span className='font-mono font-medium tabular-nums'>
-                          {formatRupiah(Number(value))}
-                        </span>
-                      )}
-                    />
-                  }
-                />
-                <Area
-                  dataKey='income'
-                  type='monotone'
-                  fill='url(#fillIncome)'
-                  stroke='var(--color-income)'
-                  strokeWidth={2}
-                />
-              </AreaChart>
-            </ChartContainer>
-          </CardContent>
-        </Card>
+        <div className='flex flex-col gap-4'>
+          {/* Pendapatan per bulan */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Monthly Income</CardTitle>
+              <CardDescription>
+                {MONTHS[0]} - {MONTHS[lastMonth]} {latestYear}, in millions of Rupiah
+              </CardDescription>
+              <CardAction>
+                <Link
+                  href='/reports'
+                  className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                >
+                  View report
+                </Link>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={chartConfig} className='aspect-auto h-64 w-full'>
+                <AreaChart data={monthly} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id='fillIncome' x1='0' y1='0' x2='0' y2='1'>
+                      <stop offset='5%' stopColor='var(--color-income)' stopOpacity={0.6} />
+                      <stop offset='95%' stopColor='var(--color-income)' stopOpacity={0.05} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey='short' tickLine={false} axisLine={false} tickMargin={8} />
+                  <YAxis
+                    width={44}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v: number) =>
+                      String(Math.round(v / 100000) / 10).replace('.', ',')
+                    }
+                  />
+                  <ChartTooltip
+                    cursor={false}
+                    content={
+                      <ChartTooltipContent
+                        labelFormatter={(_, payload) => payload?.[0]?.payload?.month}
+                        formatter={(value) => (
+                          <span className='font-mono font-medium tabular-nums'>
+                            {formatRupiah(Number(value))}
+                          </span>
+                        )}
+                      />
+                    }
+                  />
+                  <Area
+                    dataKey='income'
+                    type='monotone'
+                    fill='url(#fillIncome)'
+                    stroke='var(--color-income)'
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
+
+          {/* Penjualan per kategori menu */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Sales by Category</CardTitle>
+              <CardDescription>Food, drinks and desserts across all paid orders.</CardDescription>
+              <CardAction>
+                <Link
+                  href='/reports'
+                  className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                >
+                  View report
+                </Link>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              <CategorySales items={categories} />
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Menu terlaris */}
         <Card>

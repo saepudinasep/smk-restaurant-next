@@ -11,6 +11,7 @@ import {
   XIcon,
 } from 'lucide-react';
 
+import { CategoryFilter } from '@/components/category-filter';
 import { MenuPhoto } from '@/components/menu-photo';
 import { Button } from '@/components/ui/button';
 import {
@@ -33,6 +34,7 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { createOrder } from '@/actions/orders';
 import { formatRupiah } from '@/lib/format';
+import type { CategoryFilter as CategoryFilterValue } from '@/lib/menu-categories';
 import type { Menu } from '@/lib/types';
 import type { OrderMember } from '@/lib/data/orders';
 
@@ -123,6 +125,7 @@ export function OrderForm({
   const menuById = React.useMemo(() => new Map(menus.map((m) => [m.menuId, m])), [menus]);
 
   const [query, setQuery] = React.useState('');
+  const [category, setCategory] = React.useState<CategoryFilterValue>('all');
   const [cart, setCart] = React.useState<CartLine[]>([]);
   const [memberId, setMemberId] = React.useState('');
   const [submitted, setSubmitted] = React.useState(false);
@@ -150,7 +153,9 @@ export function OrderForm({
   const itemCount = lines.reduce((sum, l) => sum + l.qty, 0);
 
   const needle = query.trim().toLowerCase();
-  const visibleMenus = menus.filter((m) => m.name.toLowerCase().includes(needle));
+  const visibleMenus = menus.filter(
+    (m) => (category === 'all' || m.category === category) && m.name.toLowerCase().includes(needle),
+  );
 
   const memberError = submitted && !memberId ? 'Select a member for this order.' : undefined;
 
@@ -190,6 +195,8 @@ export function OrderForm({
           <CardDescription>Choose the dishes the guest wants to order.</CardDescription>
         </CardHeader>
         <CardContent className='flex flex-col gap-4'>
+          <CategoryFilter items={menus} value={category} onChange={setCategory} />
+
           <div className='relative max-w-xs'>
             <SearchIcon className='pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground' />
             <Input

@@ -19,6 +19,7 @@ export async function getOrderPageData() {
     menuId: m.menuNumber,
     name: m.name,
     price: m.price,
+    category: m.category,
     photo: m.photo,
   }));
   const members: OrderMember[] = memberRows.map((m) => ({ memberId: m.memberCode, name: m.name }));

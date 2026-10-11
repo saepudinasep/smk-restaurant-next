@@ -1,5 +1,6 @@
 import { requireRole } from '@/lib/auth-guard';
 import { phaseOf, type OrderPhase } from '@/lib/data/history';
+import { sumSalesByCategory, type MenuCategory } from '@/lib/menu-categories';
 import { computeMonthlyStats } from '@/lib/data/stats';
 import { dateToUi, paymentToUi, todayInRestaurant } from '@/lib/mappers';
 import { prisma } from '@/lib/prisma';
@@ -28,6 +29,8 @@ export type AdminDashboardData = {
   monthly: { monthIndex: number; income: number }[]; // Januari sampai lastMonth
   top: { menu: { menuId: number; name: string; photo: string }; qty: number; revenue: number }[];
   recent: RecentOrder[];
+  // Penjualan per kategori dari semua order yang sudah dibayar (jumlahnya sama dengan `revenue`)
+  categories: { category: MenuCategory; income: number; portions: number }[];
 };
 
 export type ChefDashboardData = {
@@ -174,6 +177,7 @@ async function adminData(): Promise<Omit<AdminDashboardData, 'role' | 'name'>> {
     monthly,
     top,
     recent,
+    categories: sumSalesByCategory(stats.map((s) => s.byCategory)),
   };
 }
 

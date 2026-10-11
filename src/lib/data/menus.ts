@@ -15,6 +15,7 @@ export async function getMenusPageData() {
     menuId: m.menuNumber,
     name: m.name,
     price: m.price,
+    category: m.category,
     photo: m.photo,
   }));
 

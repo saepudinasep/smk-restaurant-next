@@ -6,10 +6,13 @@
 // Tipe
 // ---------------------------------------------------------------------------
 
+export type MenuCategory = 'Food' | 'Drink' | 'Dessert';
+
 export type Menu = {
   menuId: number; // INTEGER auto increment
   name: string; // nVARCHAR(50)
   price: number; // INTEGER (Rupiah)
+  category: MenuCategory;
   photo: string; // nVARCHAR(100) — nama file, mis. 'ayamtelurasin.jpg'
 };
 
@@ -69,23 +72,29 @@ export type DetailOrder = {
 // ---------------------------------------------------------------------------
 
 export const menus: Menu[] = [
-  ['Kangkung Balacan', 25000, 'kangkungbalacan.jpg'],
-  ['Nasi Putih', 5000, 'nasiputih.jpg'],
-  ['Gurame Asam Manis', 125000, 'gurameasammanis.jpg'],
-  ['Ayam Telur Asin', 90000, 'ayamtelurasin.jpg'],
-  ['Cumi Lada Garam', 70000, 'cumiladagaram.jpg'],
-  ['Udang Mayonaise', 80000, 'udangmayonaise.jpg'],
-  ['Sapi Lada Hitam', 95000, 'sapiladahitam.jpg'],
-  ['Capcay Seafood', 45000, 'capcayseafood.jpg'],
-  ['Tahu Telur Special', 30000, 'tahutelur.jpg'],
-  ['Sop Iga Sapi', 85000, 'sopigasapi.jpg'],
-  ['Es Teh Manis', 8000, 'esteh.jpg'],
-  ['Jus Alpukat', 20000, 'jusalpukat.jpg'],
-].map(([name, price, photo], i) => ({
+  // [nama, harga, foto, kategori]
+  ['Kangkung Balacan', 25000, 'kangkungbalacan.jpg', 'Food'],
+  ['Nasi Putih', 5000, 'nasiputih.jpg', 'Food'],
+  ['Gurame Asam Manis', 125000, 'gurameasammanis.jpg', 'Food'],
+  ['Ayam Telur Asin', 90000, 'ayamtelurasin.jpg', 'Food'],
+  ['Cumi Lada Garam', 70000, 'cumiladagaram.jpg', 'Food'],
+  ['Udang Mayonaise', 80000, 'udangmayonaise.jpg', 'Food'],
+  ['Sapi Lada Hitam', 95000, 'sapiladahitam.jpg', 'Food'],
+  ['Capcay Seafood', 45000, 'capcayseafood.jpg', 'Food'],
+  ['Tahu Telur Special', 30000, 'tahutelur.jpg', 'Food'],
+  ['Sop Iga Sapi', 85000, 'sopigasapi.jpg', 'Food'],
+  ['Es Teh Manis', 8000, 'esteh.jpg', 'Drink'],
+  ['Jus Alpukat', 20000, 'jusalpukat.jpg', 'Drink'],
+  ['Es Jeruk', 10000, 'esjeruk.jpg', 'Drink'],
+  ['Es Campur', 18000, 'escampur.jpg', 'Dessert'],
+  ['Pisang Goreng Keju', 22000, 'pisanggorengkeju.jpg', 'Dessert'],
+  ['Puding Coklat', 15000, 'pudingcoklat.jpg', 'Dessert'],
+].map(([name, price, photo, category], i) => ({
   menuId: i + 1,
   name: name as string,
   price: price as number,
   photo: photo as string,
+  category: category as MenuCategory,
 }));
 
 export const members: Member[] = [
@@ -124,7 +133,7 @@ export const employees: Employee[] = [
 }));
 
 // ---------------------------------------------------------------------------
-// Transaksi: dibuat secara deterministik (Jan - Okt 2026)
+// Transaksi: dibuat secara deterministik (Jan - Okt 2026), memuat makanan, minuman, dan dessert
 // ---------------------------------------------------------------------------
 
 // Pseudo-random bergulir dengan seed tetap -> hasil selalu sama di server dan client.
@@ -136,6 +145,10 @@ const rand = () => {
 const pick = <T>(list: readonly T[]): T => list[Math.floor(rand() * list.length)];
 
 const cashiers = employees.filter((e) => e.position === 'Cashier');
+const menusOf = (category: MenuCategory) => menus.filter((m) => m.category === category);
+const foods = menusOf('Food');
+const drinks = menusOf('Drink');
+const desserts = menusOf('Dessert');
 const ORDER_YEAR = 2026;
 const ORDERS_PER_MONTH = [6, 7, 5, 8, 6, 7, 9, 6, 8, 7]; // Jan..Okt
 const UNPAID_COUNT = 4; // 4 order terakhir (Okt) belum dibayar & masih diproses dapur
@@ -157,10 +170,12 @@ export const detailOrders: DetailOrder[] = [];
       const unpaid = created > total - UNPAID_COUNT;
       const day = String(1 + Math.floor(rand() * 27)).padStart(2, '0');
 
-      // 1-4 menu berbeda per order
-      const itemCount = 1 + Math.floor(rand() * 4);
+      // Komposisi order seperti di restoran: 1-3 makanan, sering ditambah minuman, kadang dessert
       const chosen = new Set<number>();
-      while (chosen.size < itemCount) chosen.add(pick(menus).menuId);
+      const foodCount = 1 + Math.floor(rand() * 3);
+      while (chosen.size < foodCount) chosen.add(pick(foods).menuId);
+      if (rand() < 0.65) chosen.add(pick(drinks).menuId); // ~65% order memesan minuman
+      if (rand() < 0.35) chosen.add(pick(desserts).menuId); // ~35% order memesan dessert
 
       const paymentType = pick(PAYMENT_TYPES);
       headerOrders.push({

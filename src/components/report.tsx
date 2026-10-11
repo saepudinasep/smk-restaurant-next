@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Bar, BarChart, CartesianGrid, LabelList, XAxis, YAxis } from 'recharts';
 import { BanknoteIcon, CalendarRangeIcon, ReceiptTextIcon, TrendingUpIcon } from 'lucide-react';
 
+import { CategorySales } from '@/components/category-sales';
 import { StatCards } from '@/components/stat-cards';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,6 +33,7 @@ import {
 } from '@/components/ui/table';
 import type { MonthlyStat, ReportDefaults } from '@/lib/data/reports';
 import { MONTHS, formatMillion, formatRupiah } from '@/lib/format';
+import { emptySalesByCategory, sumSalesByCategory } from '@/lib/menu-categories';
 
 const monthItems = MONTHS.map((m, i) => ({ value: String(i), label: m }));
 
@@ -51,6 +53,7 @@ function monthlyRows(stats: MonthlyStat[], year: number, from: number, to: numbe
       orders: stat?.orders ?? 0,
       unpaidOrders: stat?.unpaidOrders ?? 0,
       unpaidAmount: stat?.unpaidAmount ?? 0,
+      byCategory: stat?.byCategory ?? emptySalesByCategory(),
     };
   });
 }
@@ -80,6 +83,7 @@ export function Report({
 
   const rows = monthlyRows(stats, applied.year, applied.from, applied.to);
   const totalIncome = rows.reduce((sum, r) => sum + r.income, 0);
+  const categorySales = sumSalesByCategory(rows.map((r) => r.byCategory));
   const totalOrders = rows.reduce((sum, r) => sum + r.orders, 0);
   const average = totalOrders ? Math.round(totalIncome / totalOrders) : 0;
   const best = rows.reduce((b, r) => (r.income > b.income ? r : b), rows[0]);
@@ -302,6 +306,19 @@ export function Report({
           </CardContent>
         </Card>
       </div>
+
+      {/* Penjualan per kategori menu */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Sales by Category</CardTitle>
+          <CardDescription>
+            Food, drinks and desserts, {rangeLabel} (paid orders only).
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CategorySales items={categorySales} />
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { ROLES } from '@/lib/access';
+import { MENU_CATEGORIES } from '@/lib/menu-categories';
 
 // Batas panjang mengikuti data dictionary SMK Restaurant (LKS SMK XXVI 2018).
 // Skema dipakai oleh Server Action; form di browser memakai aturan yang sama untuk pesan cepat.
@@ -65,6 +66,7 @@ export const menuSchema = z.object({
     .int('Price must be a whole number.')
     .min(1, 'Price must be greater than 0.')
     .max(999_999_999, 'Price is too high.'),
+  category: z.enum(MENU_CATEGORIES, 'Select a category.'),
   // public_id aset Cloudinary yang baru di-upload; kosong = pakai foto yang sudah ada
   photoPublicId: z.string().trim().max(200).optional(),
 });

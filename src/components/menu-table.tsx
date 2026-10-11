@@ -5,12 +5,21 @@ import { PlusIcon, TagIcon, TrophyIcon, UploadIcon, UtensilsIcon } from 'lucide-
 
 import { createMenu, deleteMenu, updateMenu } from '@/actions/menus';
 import type { ActionResult } from '@/actions/result';
+import { CategoryFilter } from '@/components/category-filter';
 import { MenuPhoto } from '@/components/menu-photo';
 import { SimpleDataTable, type Column } from '@/components/simple-data-table';
 import { StatCards } from '@/components/stat-cards';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Sheet,
   SheetContent,
@@ -23,6 +32,12 @@ import { Spinner } from '@/components/ui/spinner';
 import { uploadMenuPhoto } from '@/lib/cloudinary-upload';
 import { nextMenuNumber } from '@/lib/codes';
 import { formatRupiah } from '@/lib/format';
+import {
+  CATEGORY_LABEL,
+  MENU_CATEGORIES,
+  type CategoryFilter as CategoryFilterValue,
+  type MenuCategory,
+} from '@/lib/menu-categories';
 import type { Menu } from '@/lib/types';
 
 // Di form harga berupa teks supaya bisa dikosongkan; diubah ke angka setelah lolos validasi.
@@ -38,8 +53,14 @@ const columns: Column<Menu>[] = [
   { header: 'Photo', cell: (m) => <MenuPhoto menu={m} /> },
   { header: 'Menu ID', cell: (m) => m.menuId },
   { header: 'Name', cell: (m) => m.name, className: 'font-medium' },
+  {
+    header: 'Category',
+    cell: (m) => <Badge variant='outline'>{CATEGORY_LABEL[m.category]}</Badge>,
+  },
   { header: 'Price', cell: (m) => formatRupiah(m.price), className: 'tabular-nums' },
 ];
+
+const categoryItems = MENU_CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABEL[c] }));
 
 type FieldKey = 'name' | 'price' | 'photo';
 type Errors = Partial<Record<FieldKey, string>>;
@@ -78,6 +99,7 @@ function MenuFormSheet({
     menuId: number;
     name: string;
     price: number;
+    category: MenuCategory;
     photoPublicId?: string;
   }) => Promise<ActionResult>;
   onClose: () => void;
@@ -157,6 +179,7 @@ function MenuFormSheet({
         menuId: form.menuId,
         name: form.name.trim(),
         price: Number(form.price),
+        category: form.category,
         photoPublicId,
       });
       if (result.ok) onClose();
@@ -245,6 +268,26 @@ function MenuFormSheet({
               <FieldError>{shown('name')}</FieldError>
             </Field>
 
+            <Field>
+              <FieldLabel>Category</FieldLabel>
+              <Select
+                items={categoryItems}
+                value={form.category}
+                onValueChange={(v) => v && set('category', v as MenuCategory)}
+              >
+                <SelectTrigger className='w-full' aria-label='Category'>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {categoryItems.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>
+                      {c.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
             <Field data-invalid={Boolean(shown('price'))}>
               <FieldLabel htmlFor='price'>Price</FieldLabel>
               <Input
@@ -305,6 +348,8 @@ export function MenuTable({
   // Next.js mengirim props baru sehingga tabel dan kartu ikut ter-update.
   const data = initialData;
   const [sheet, setSheet] = React.useState<SheetState | null>(null);
+  const [category, setCategory] = React.useState<CategoryFilterValue>('all');
+  const visible = category === 'all' ? data : data.filter((m) => m.category === category);
 
   const total = data.length;
   const average = total ? Math.round(data.reduce((s, m) => s + m.price, 0) / total) : 0;
@@ -319,7 +364,13 @@ export function MenuTable({
     setSheet({
       mode: 'insert',
       // Hanya pratinjau; MenuID yang sebenarnya ditentukan server saat menyimpan
-      menu: { menuId: nextMenuNumber(data.map((m) => m.menuId)), name: '', price: '', photo: '' },
+      menu: {
+        menuId: nextMenuNumber(data.map((m) => m.menuId)),
+        name: '',
+        price: '',
+        category: 'Food',
+        photo: '',
+      },
     });
   const openUpdate = (menu: Menu) =>
     setSheet({ mode: 'update', menu: { ...menu, price: String(menu.price) } });
@@ -355,8 +406,10 @@ export function MenuTable({
         ]}
       />
 
+      <CategoryFilter items={data} value={category} onChange={setCategory} />
+
       <SimpleDataTable
-        data={data}
+        data={visible}
         columns={columns}
         getRowId={(m) => String(m.menuId)}
         getRowLabel={(m) => m.name}

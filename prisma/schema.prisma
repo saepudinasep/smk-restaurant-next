@@ -45,6 +45,13 @@ enum NotificationType {
   system
 }
 
+// Kategori menu: makanan, minuman, atau dessert. Dipakai untuk filter di Manage Menu dan Orders.
+enum MenuCategory {
+  Food
+  Drink
+  Dessert
+}
+
 enum ItemStatus {
   Pending
   Cooking
@@ -91,6 +98,7 @@ model Menu {
   menuNumber Int      @unique // MenuID di ERD (integer). MongoDB tidak punya auto increment, jadi dibuat di aplikasi (maks + 1)
   name       String   @unique
   price      Int // Rupiah
+  category   MenuCategory @default(Food)
 
   // Photo wajib. Berisi path lokal (mis. /menus/ayamtelurasin.jpg) atau url Cloudinary;
   // photoPublicId hanya terisi untuk foto Cloudinary (dipakai untuk hapus/ganti foto).

@@ -120,7 +120,13 @@ async function main() {
   const menuIds = new Map<number, string>(); // MenuID (1..12) -> ObjectId
   for (const m of d.menus) {
     const row = await prisma.menu.create({
-      data: { menuNumber: m.menuId, name: m.name, price: m.price, photo: `/menus/${m.photo}` },
+      data: {
+        menuNumber: m.menuId,
+        name: m.name,
+        price: m.price,
+        category: m.category,
+        photo: `/menus/${m.photo}`,
+      },
     });
     menuIds.set(m.menuId, row.id);
   }

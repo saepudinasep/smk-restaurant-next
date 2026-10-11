@@ -76,6 +76,7 @@ export async function createMenu(input: unknown): Promise<ActionResult> {
           menuNumber: nextMenuNumber(latest ? [latest.menuNumber] : []),
           name: m.name,
           price: m.price,
+          category: m.category,
           photo: photo.url,
           photoPublicId: photo.publicId,
         },
@@ -135,6 +136,7 @@ export async function updateMenu(input: unknown): Promise<ActionResult> {
       data: {
         name: m.name,
         price: m.price,
+        category: m.category,
         ...(newPhoto && { photo: newPhoto.url, photoPublicId: newPhoto.publicId }),
       },
     });

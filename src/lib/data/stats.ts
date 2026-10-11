@@ -1,3 +1,4 @@
+import { emptySalesByCategory, type SalesByCategory } from '@/lib/menu-categories';
 import { prisma } from '@/lib/prisma';
 
 /** Ringkasan satu bulan. `month` = 0 (Januari) sampai 11 (Desember). */
@@ -8,6 +9,8 @@ export type MonthlyStat = {
   orders: number; // jumlah order yang sudah dibayar
   unpaidOrders: number; // order yang belum dibayar (tidak masuk pendapatan)
   unpaidAmount: number;
+  // Penjualan per kategori menu (hanya order yang sudah dibayar); jumlah income-nya sama dengan `income`
+  byCategory: SalesByCategory;
 };
 
 /**
@@ -19,7 +22,11 @@ export type MonthlyStat = {
  */
 export async function computeMonthlyStats(): Promise<MonthlyStat[]> {
   const rows = await prisma.headerOrder.findMany({
-    select: { date: true, payment: true, details: { select: { qty: true, price: true } } },
+    select: {
+      date: true,
+      payment: true,
+      details: { select: { qty: true, price: true, menu: { select: { category: true } } } },
+    },
   });
 
   const byMonth = new Map<string, MonthlyStat>();
@@ -35,12 +42,18 @@ export async function computeMonthlyStats(): Promise<MonthlyStat[]> {
       orders: 0,
       unpaidOrders: 0,
       unpaidAmount: 0,
+      byCategory: emptySalesByCategory(),
     };
 
     const total = o.details.reduce((sum, d) => sum + d.qty * d.price, 0);
     if (o.payment !== null) {
       stat.income += total;
       stat.orders += 1;
+      for (const d of o.details) {
+        const sales = stat.byCategory[d.menu.category];
+        sales.income += d.qty * d.price;
+        sales.portions += d.qty;
+      }
     } else {
       stat.unpaidAmount += total;
       stat.unpaidOrders += 1;
