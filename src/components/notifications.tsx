@@ -1,10 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
 import {
   BanknoteIcon,
   BellIcon,
+  BellRingIcon,
   CheckCheckIcon,
   CheckIcon,
   ChefHatIcon,
@@ -23,10 +23,12 @@ import {
 } from '@/actions/notifications';
 import type { ActionResult } from '@/actions/result';
 import { StatCards } from '@/components/stat-cards';
+import { useLiveRefresh } from '@/hooks/use-live-refresh';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { usePush } from '@/hooks/use-push';
 import { NOTIFICATIONS_CHANGED } from '@/hooks/use-unread-count';
 import { formatDateTime, type AppNotification, type NotificationType } from '@/lib/notifications';
 
@@ -41,9 +43,6 @@ const typeIcon: Record<NotificationType, LucideIcon> = {
 // Jenis yang dianggap aktivitas pesanan, untuk kartu ringkasan ketiga
 const ORDER_ACTIVITY: NotificationType[] = ['order', 'kitchen', 'payment'];
 
-// Daftar diperbarui otomatis supaya notifikasi baru muncul tanpa muat ulang halaman.
-const REFRESH_MS = 15_000;
-
 type Filter = 'all' | 'unread';
 
 export function Notifications({
@@ -51,8 +50,6 @@ export function Notifications({
 }: {
   initialNotifications: AppNotification[];
 }) {
-  const router = useRouter();
-
   // Data datang dari server (props). Setelah Server Action memanggil revalidatePath,
   // Next.js mengirim props baru sehingga daftar dan kartu ikut ter-update.
   const items = initialNotifications;
@@ -61,14 +58,10 @@ export function Notifications({
   const [busy, setBusy] = React.useState<{ id: string; action: 'read' | 'delete' } | null>(null);
   const [markingAll, setMarkingAll] = React.useState(false);
   const [error, setError] = React.useState('');
+  const push = usePush();
 
-  // Muat ulang data berkala selama tab terlihat; filter yang dipilih tidak hilang
-  React.useEffect(() => {
-    const id = setInterval(() => {
-      if (document.visibilityState === 'visible') router.refresh();
-    }, REFRESH_MS);
-    return () => clearInterval(id);
-  }, [router]);
+  // Data disegarkan otomatis saat ada kejadian realtime (dan berkala sebagai cadangan)
+  useLiveRefresh();
 
   /** Menjalankan aksi, lalu memberi tahu lonceng di header agar angkanya langsung ikut berubah. */
   const run = async (task: () => Promise<ActionResult>) => {
@@ -146,6 +139,19 @@ export function Notifications({
           Mark all as read
         </Button>
       </div>
+
+      {push.status === 'off' && (
+        <div className='flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm'>
+          <span className='flex items-center gap-2'>
+            <BellRingIcon className='size-4 shrink-0' />
+            Get an alert on this device even when the app is closed.
+          </span>
+          <Button size='sm' disabled={push.busy} onClick={push.enable}>
+            {push.busy && <Spinner />}
+            Turn on push notifications
+          </Button>
+        </div>
+      )}
 
       {error && (
         <p role='alert' className='text-sm text-destructive'>

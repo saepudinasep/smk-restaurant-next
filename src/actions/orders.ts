@@ -80,6 +80,7 @@ export async function createOrder(input: unknown): Promise<CreateOrderResult> {
       await notifyRoles(['Chef'], {
         type: 'order',
         title: 'New order placed',
+        url: '/view-orders',
         message: `Order ${orderCode} was placed for ${member.name}. ${portions} ${portions === 1 ? 'portion is' : 'portions are'} waiting for the kitchen.`,
       });
       return { ok: true, orderId: orderCode, total, items: portions };

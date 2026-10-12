@@ -24,6 +24,9 @@ export type CreateOrderResult =
   | { ok: true; orderId: string; total: number; items: number }
   | { ok: false; error: string };
 
+/** Hasil tes web push: jumlah perangkat yang berhasil dikirimi. */
+export type TestPushResult = { ok: true; sent: number } | { ok: false; error: string };
+
 /** Hasil pembayaran: total dari harga di database, dan kembalian (hanya untuk Cash). */
 export type PayOrderResult =
   | { ok: true; total: number; change: number | null }

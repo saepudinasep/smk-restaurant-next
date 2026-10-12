@@ -3,6 +3,7 @@
 import Link from 'next/link';
 
 import { logout } from '@/actions/auth';
+import { unregisterPushOnThisDevice } from '@/lib/push-client';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -89,7 +90,12 @@ export function NavUser({
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             {/* signOut() lewat Server Action: sesi dihapus lalu diarahkan ke /login */}
-            <DropdownMenuItem onClick={() => logout()}>
+            <DropdownMenuItem
+              onClick={async () => {
+                await unregisterPushOnThisDevice(); // perangkat ini berhenti menerima notifikasi akun yang keluar
+                await logout();
+              }}
+            >
               <LogOutIcon />
               Log out
             </DropdownMenuItem>

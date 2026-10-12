@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
 import {
   ChefHatIcon,
   CircleCheckIcon,
@@ -14,6 +13,7 @@ import {
 
 import { updateDishStatus } from '@/actions/kitchen';
 import { MenuPhoto } from '@/components/menu-photo';
+import { useLiveRefresh } from '@/hooks/use-live-refresh';
 import { StatCards } from '@/components/stat-cards';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -41,9 +41,6 @@ import { ITEM_STATUSES } from '@/lib/validations';
 
 type ItemStatus = KitchenItem['status'];
 
-// Papan dapur diperbarui otomatis supaya order baru dari kasir muncul tanpa muat ulang.
-const REFRESH_MS = 15_000;
-
 const statusItems = ITEM_STATUSES.map((s) => ({ value: s, label: s }));
 
 /** Status gabungan satu order, dihitung dari status semua menunya. */
@@ -63,8 +60,6 @@ const statusDot: Record<ItemStatus, string> = {
 };
 
 export function ViewOrders({ initialOrders }: { initialOrders: KitchenOrder[] }) {
-  const router = useRouter();
-
   // Data datang dari server (props). Setelah Server Action memanggil revalidatePath,
   // Next.js mengirim props baru, jadi status yang tampil selalu yang tersimpan di database.
   const orders = initialOrders;
@@ -74,13 +69,8 @@ export function ViewOrders({ initialOrders }: { initialOrders: KitchenOrder[] })
   const [error, setError] = React.useState('');
   const [query, setQuery] = React.useState('');
 
-  // Muat ulang data berkala selama tab terlihat; state di browser (pilihan order, pencarian) tidak hilang
-  React.useEffect(() => {
-    const id = setInterval(() => {
-      if (document.visibilityState === 'visible') router.refresh();
-    }, REFRESH_MS);
-    return () => clearInterval(id);
-  }, [router]);
+  // Data disegarkan otomatis saat ada kejadian realtime (dan berkala sebagai cadangan)
+  useLiveRefresh();
 
   const changeStatus = async (detailIds: string[], status: ItemStatus) => {
     setSaving((s) => new Set([...s, ...detailIds]));
@@ -168,7 +158,7 @@ export function ViewOrders({ initialOrders }: { initialOrders: KitchenOrder[] })
           <Card>
             <CardHeader>
               <CardTitle>Order Queue</CardTitle>
-              <CardDescription>Oldest orders first. Updates every 15 seconds.</CardDescription>
+              <CardDescription>Oldest orders first. Updates live.</CardDescription>
             </CardHeader>
             <CardContent className='flex flex-col gap-3'>
               <div className='relative'>

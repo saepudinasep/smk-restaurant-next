@@ -34,15 +34,25 @@ async function main() {
   if (!/^\d{10,13}$/.test(handphone)) fail('ADMIN_HANDPHONE harus 10-13 digit angka.');
   // Untuk akun Admin di produksi, password minimal 8 karakter selain aturan besar-kecil-angka
   if (password.length < 8 || !isStrongPassword(password))
-    fail('ADMIN_PASSWORD minimal 8 karakter dan wajib mengandung huruf besar, huruf kecil, dan angka (maksimal 50).');
+    fail(
+      'ADMIN_PASSWORD minimal 8 karakter dan wajib mengandung huruf besar, huruf kecil, dan angka (maksimal 50).',
+    );
 
-  const existing = await prisma.employee.findUnique({ where: { email }, select: { employeeCode: true, position: true } });
+  const existing = await prisma.employee.findUnique({
+    where: { email },
+    select: { employeeCode: true, position: true },
+  });
   if (existing) {
-    console.log(`Tidak ada yang dibuat: ${email} sudah terdaftar (${existing.employeeCode}, ${existing.position}).`);
+    console.log(
+      `Tidak ada yang dibuat: ${email} sudah terdaftar (${existing.employeeCode}, ${existing.position}).`,
+    );
     return;
   }
 
-  const latest = await prisma.employee.findFirst({ orderBy: { employeeCode: 'desc' }, select: { employeeCode: true } });
+  const latest = await prisma.employee.findFirst({
+    orderBy: { employeeCode: 'desc' },
+    select: { employeeCode: true },
+  });
   const created = await prisma.employee.create({
     data: {
       employeeCode: nextEmployeeCode(latest ? [latest.employeeCode] : []),
@@ -55,7 +65,9 @@ async function main() {
     select: { employeeCode: true },
   });
 
-  console.log(`Admin dibuat: ${created.employeeCode} (${email}). Ganti password dan nomor handphone lewat halaman Account.`);
+  console.log(
+    `Admin dibuat: ${created.employeeCode} (${email}). Ganti password dan nomor handphone lewat halaman Account.`,
+  );
 }
 
 main()

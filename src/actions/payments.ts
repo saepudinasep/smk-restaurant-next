@@ -63,6 +63,7 @@ export async function payOrder(input: unknown): Promise<PayOrderResult> {
     await notifyRoles(['Admin'], {
       type: 'payment',
       title: 'Payment received',
+      url: '/order-history',
       message: `Order ${orderId} was paid with ${payment}${bank ? ` (${bank})` : ''}, ${formatRupiah(total)}.`,
     });
     return { ok: true, total, change: received === null ? null : received - total };

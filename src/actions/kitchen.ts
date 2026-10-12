@@ -46,6 +46,7 @@ export async function updateDishStatus(input: unknown): Promise<ActionResult> {
           await notifyEmployees([order.employeeId], {
             type: 'kitchen',
             title: 'Order ready to be paid',
+            url: '/payments',
             message: `All dishes of order ${order.orderCode} have been delivered. It is waiting for payment.`,
           });
       }

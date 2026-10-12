@@ -75,6 +75,9 @@ model Employee {
 
   // Notifikasi milik karyawan ini; ikut terhapus bila karyawannya dihapus
   notifications Notification[]
+
+  // Perangkat/browser yang didaftarkan karyawan ini untuk web push
+  pushSubscriptions PushSubscription[]
 }
 
 // Msmember
@@ -182,4 +185,22 @@ model Notification {
 
   @@index([recipientId, createdAt]) // daftar notifikasi terbaru
   @@index([recipientId, readAt]) // hitung yang belum dibaca
+}
+
+// Satu baris per browser/perangkat yang mengaktifkan web push (notifikasi saat web tidak sedang dibuka).
+// `endpoint` unik per browser; bila browser yang sama dipakai karyawan lain, barisnya dipindahkan ke karyawan itu.
+model PushSubscription {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  employeeId String   @db.ObjectId
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  endpoint  String  @unique // alamat layanan push milik browser (FCM, Mozilla, Apple, ...)
+  p256dh    String // kunci publik browser untuk mengenkripsi pesan
+  auth      String // rahasia autentikasi browser
+  userAgent String? // untuk mengenali perangkat saat debugging
+
+  createdAt DateTime @default(now())
+
+  @@index([employeeId])
 }

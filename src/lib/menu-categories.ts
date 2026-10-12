@@ -31,7 +31,9 @@ export const emptySalesByCategory = (): SalesByCategory => ({
 });
 
 /** Menjumlahkan beberapa ringkasan (mis. beberapa bulan) menjadi satu daftar per kategori. */
-export function sumSalesByCategory(list: SalesByCategory[]): { category: MenuCategory; income: number; portions: number }[] {
+export function sumSalesByCategory(
+  list: SalesByCategory[],
+): { category: MenuCategory; income: number; portions: number }[] {
   return MENU_CATEGORIES.map((category) => ({
     category,
     income: list.reduce((sum, s) => sum + s[category].income, 0),

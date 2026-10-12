@@ -22,7 +22,8 @@ const DESSERT = /(puding|es campur|es krim|pisang goreng|kue|cake|brownies)/i;
 const DRINK = /(^es |\bes\b|jus|teh|kopi|susu|\bair\b|juice|tea|coffee)/i;
 
 // Dessert diperiksa lebih dulu karena "Es Campur" juga berawalan "Es"
-const guess = (name: string): Category => (DESSERT.test(name) ? 'Dessert' : DRINK.test(name) ? 'Drink' : 'Food');
+const guess = (name: string): Category =>
+  DESSERT.test(name) ? 'Dessert' : DRINK.test(name) ? 'Drink' : 'Food';
 
 async function main() {
   // find mentah: Prisma biasa akan gagal membaca dokumen yang belum punya field wajib

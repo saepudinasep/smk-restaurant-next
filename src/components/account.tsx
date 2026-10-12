@@ -21,6 +21,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/c
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { PushCard } from '@/components/push-card';
 import { PASSWORD_MAX, PASSWORD_RULES } from '@/lib/password-rules';
 
 export type AccountProfile = {
@@ -395,6 +396,7 @@ export function Account({ profile }: { profile: AccountProfile }) {
     <div className='grid items-start gap-4 md:gap-6 lg:grid-cols-2'>
       <ProfileCard profile={profile} />
       <PasswordCard />
+      <PushCard className='lg:col-span-2' />
     </div>
   );
 }

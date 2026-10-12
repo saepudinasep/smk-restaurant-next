@@ -12,7 +12,11 @@ export function CategorySales({
   const total = items.reduce((sum, i) => sum + i.income, 0);
 
   if (total === 0) {
-    return <p className='py-6 text-center text-sm text-muted-foreground'>No paid orders in this period yet.</p>;
+    return (
+      <p className='py-6 text-center text-sm text-muted-foreground'>
+        No paid orders in this period yet.
+      </p>
+    );
   }
 
   return (

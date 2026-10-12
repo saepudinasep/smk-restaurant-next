@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
 import {
   BanknoteIcon,
   CircleCheckIcon,
@@ -13,6 +12,7 @@ import {
 } from 'lucide-react';
 
 import { MenuPhoto } from '@/components/menu-photo';
+import { useLiveRefresh } from '@/hooks/use-live-refresh';
 import { StatCards } from '@/components/stat-cards';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -38,8 +38,8 @@ import {
 } from '@/components/ui/table';
 import { payOrder } from '@/actions/payments';
 import type { PaymentOrder } from '@/lib/data/payments';
-import { BANKS, PAYMENT_TYPES, type Bank, type PaymentType } from '@/lib/validations';
 import { formatDate, formatRupiah } from '@/lib/format';
+import { BANKS, PAYMENT_TYPES, type Bank, type PaymentType } from '@/lib/validations';
 
 const paymentItems = PAYMENT_TYPES.map((t) => ({ value: t, label: t }));
 const bankItems = BANKS.map((b) => ({ value: b, label: b }));
@@ -322,14 +322,9 @@ function PaymentForm({
   );
 }
 
-// Papan kasir diperbarui otomatis supaya order baru dan status dapur selalu terbaru.
-const REFRESH_MS = 15_000;
-
 type PaidSnapshot = { order: PaymentOrder; receipt: Receipt };
 
 export function Payments({ initialOrders }: { initialOrders: PaymentOrder[] }) {
-  const router = useRouter();
-
   // Order yang baru dibayar hilang dari data server, tetapi tetap ditampilkan (berlabel Paid)
   // supaya struknya masih bisa dilihat; snapshot-nya disimpan di browser sampai halaman ditinggalkan.
   // Order boleh dibayar walau dapur belum selesai.
@@ -337,13 +332,8 @@ export function Payments({ initialOrders }: { initialOrders: PaymentOrder[] }) {
   const [selectedId, setSelectedId] = React.useState<string>(() => initialOrders[0]?.orderId ?? '');
   const [query, setQuery] = React.useState('');
 
-  // Muat ulang data berkala selama tab terlihat; form dan pilihan order tidak hilang
-  React.useEffect(() => {
-    const id = setInterval(() => {
-      if (document.visibilityState === 'visible') router.refresh();
-    }, REFRESH_MS);
-    return () => clearInterval(id);
-  }, [router]);
+  // Data disegarkan otomatis saat ada kejadian realtime (dan berkala sebagai cadangan)
+  useLiveRefresh();
 
   const queue = [
     ...initialOrders.filter((o) => !paid[o.orderId]),
@@ -439,9 +429,7 @@ export function Payments({ initialOrders }: { initialOrders: PaymentOrder[] }) {
           <Card>
             <CardHeader>
               <CardTitle>Unpaid Orders</CardTitle>
-              <CardDescription>
-                Choose an order to take payment. Updates every 15 seconds.
-              </CardDescription>
+              <CardDescription>Choose an order to take payment. Updates live.</CardDescription>
             </CardHeader>
             <CardContent className='flex flex-col gap-3'>
               <div className='relative'>
