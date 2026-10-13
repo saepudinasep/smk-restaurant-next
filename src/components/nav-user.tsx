@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 import { logout } from '@/actions/auth';
 import { unregisterPushOnThisDevice } from '@/lib/push-client';
@@ -32,6 +33,7 @@ export function NavUser({
   };
 }) {
   const { isMobile } = useSidebar();
+  const router = useRouter();
   const initials =
     user.name
       .split(' ')
@@ -94,6 +96,7 @@ export function NavUser({
               onClick={async () => {
                 await unregisterPushOnThisDevice(); // perangkat ini berhenti menerima notifikasi akun yang keluar
                 await logout();
+                router.push('/login');
               }}
             >
               <LogOutIcon />

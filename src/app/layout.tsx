@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { auth } from '@/auth';
 import { SessionProvider } from 'next-auth/react';
+import { RealtimeProvider } from '@/components/realtime-provider';
 import { RouteProgress } from '@/components/route-progress';
 
 const geistSans = Geist({
@@ -29,7 +30,10 @@ export default async function RootLayout({ children }: LayoutProps<'/'>) {
   return (
     <html lang='en' className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className='min-h-full flex flex-col'>
-        <SessionProvider session={session}>
+        {/* key: bila pengguna berganti (login/logout), SessionProvider dibuat ulang dengan sesi terbaru dari server */}
+        <SessionProvider key={session?.user?.id ?? 'anon'} session={session}>
+          {/* Toast + koneksi Pusher + pendaftaran web push */}
+          <RealtimeProvider />
           <RouteProgress />
           {children}
         </SessionProvider>

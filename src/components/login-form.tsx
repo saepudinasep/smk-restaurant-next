@@ -15,8 +15,16 @@ export function LoginForm({
   callbackUrl = '/',
   ...props
 }: React.ComponentProps<'form'> & { callbackUrl?: string }) {
-  // Hasil Server Action: pesan error, atau undefined (saat sukses halaman langsung berpindah).
-  const [serverError, formAction, pending] = React.useActionState(login, undefined);
+  // Hasil Server Action: { error } atau { redirectTo }. Saat berhasil, halaman dibuka dengan navigasi PENUH
+  // supaya sesi di browser dimuat ulang (lihat penjelasan di actions/auth.ts).
+  const [state, formAction, submitting] = React.useActionState(login, undefined);
+  const pending = submitting || Boolean(state?.redirectTo);
+  const serverError = state?.error;
+
+  React.useEffect(() => {
+    if (!state?.redirectTo) return;
+    window.location.assign(state.redirectTo);
+  }, [state]);
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [show, setShow] = React.useState(false);
