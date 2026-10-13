@@ -2,6 +2,7 @@ import type { ItemStatus } from '@/generated/prisma/client';
 import { requireRole } from '@/lib/auth-guard';
 import { dateToUi } from '@/lib/mappers';
 import { prisma } from '@/lib/prisma';
+import { unpaidWhere } from '@/lib/prisma-filters';
 
 export type PaymentItem = {
   detailId: string;
@@ -25,7 +26,7 @@ export async function getPaymentsPageData() {
   await requireRole('Cashier');
 
   const rows = await prisma.headerOrder.findMany({
-    where: { payment: null }, // belum dibayar
+    where: unpaidWhere, // belum dibayar (payment null ATAU tidak ada)
     orderBy: { orderCode: 'asc' }, // terlama dulu
     include: {
       member: { select: { memberCode: true, name: true } },

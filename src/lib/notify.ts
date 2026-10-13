@@ -61,8 +61,9 @@ async function createFor(recipientIds: string[], payload: Payload) {
   const { url: _url, ...data } = payload;
   void _url;
   try {
+    // readAt: null ditulis eksplisit (belum dibaca), bukan dihilangkan; lihat lib/prisma-filters.ts
     await prisma.notification.createMany({
-      data: ids.map((recipientId) => ({ recipientId, ...data })),
+      data: ids.map((recipientId) => ({ recipientId, ...data, readAt: null })),
     });
   } catch (e) {
     console.error('Notification could not be created', e);

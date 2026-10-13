@@ -9,6 +9,7 @@ import { formatRupiah } from '@/lib/format';
 import { paymentToDb } from '@/lib/mappers';
 import { notifyRoles } from '@/lib/notify';
 import { prisma } from '@/lib/prisma';
+import { unpaidWhere } from '@/lib/prisma-filters';
 import { payBaseSchema, payCardSchema, payCashSchema } from '@/lib/validations';
 
 const ALREADY_PAID = 'This order has already been paid.';
@@ -52,7 +53,7 @@ export async function payOrder(input: unknown): Promise<PayOrderResult> {
     // Hanya berhasil bila order MASIH belum dibayar saat ditulis. Bila dua kasir membayar order yang sama
     // bersamaan, hanya satu yang lolos (count = 0 untuk yang kedua) sehingga tidak ada pembayaran ganda.
     const { count } = await prisma.headerOrder.updateMany({
-      where: { id: order.id, payment: null },
+      where: { id: order.id, ...unpaidWhere },
       data: { payment: paymentToDb[payment], bank },
     });
     if (count === 0) return { ok: false, error: ALREADY_PAID };

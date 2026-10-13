@@ -66,7 +66,10 @@ export async function createOrder(input: unknown): Promise<CreateOrderResult> {
           employeeId: me.id,
           memberId: member.id,
           date: dateToDb(today),
-          // payment & bank dikosongkan: terisi saat form Payment disimpan
+          // payment & bank belum terisi: diisi saat form Payment disimpan. Ditulis null EKSPLISIT (bukan dihilangkan)
+          // supaya dokumennya konsisten dengan data seed dan cocok dengan filter `payment: null`.
+          payment: null,
+          bank: null,
           details: { create: lines }, // status awal Pending (default schema)
         },
       });

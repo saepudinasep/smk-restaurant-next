@@ -7,6 +7,7 @@ import type { ActionResult } from '@/actions/result';
 import { ROLES } from '@/lib/access';
 import { requireRole } from '@/lib/auth-guard';
 import { prisma } from '@/lib/prisma';
+import { unreadWhere } from '@/lib/prisma-filters';
 
 // id notifikasi = ObjectId MongoDB (24 karakter heksadesimal)
 const idSchema = z.string().regex(/^[0-9a-f]{24}$/, 'Invalid notification.');
@@ -36,7 +37,7 @@ export async function setNotificationRead(id: unknown, read: boolean): Promise<A
 export async function markAllNotificationsRead(): Promise<ActionResult> {
   const me = await requireRole(...ROLES);
   await prisma.notification.updateMany({
-    where: { recipientId: me.id, readAt: null },
+    where: { recipientId: me.id, ...unreadWhere },
     data: { readAt: new Date() },
   });
   revalidatePath('/notifications');

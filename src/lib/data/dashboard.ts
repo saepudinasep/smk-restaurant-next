@@ -4,6 +4,7 @@ import { sumSalesByCategory, type MenuCategory } from '@/lib/menu-categories';
 import { computeMonthlyStats } from '@/lib/data/stats';
 import { dateToUi, paymentToUi, todayInRestaurant } from '@/lib/mappers';
 import { prisma } from '@/lib/prisma';
+import { unpaidWhere } from '@/lib/prisma-filters';
 
 export type RecentOrder = {
   orderId: string;
@@ -247,7 +248,7 @@ async function cashierData(
 ): Promise<Omit<CashierDashboardData, 'role' | 'name'>> {
   const [unpaidRows, mine, mixRows] = await Promise.all([
     prisma.headerOrder.findMany({
-      where: { payment: null },
+      where: unpaidWhere,
       orderBy: { orderCode: 'asc' }, // terlama dulu
       include: {
         member: { select: { name: true } },
