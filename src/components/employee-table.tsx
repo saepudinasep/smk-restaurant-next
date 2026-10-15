@@ -2,11 +2,13 @@
 
 import * as React from 'react';
 import { BanknoteIcon, ChefHatIcon, PlusIcon, ShieldCheckIcon, UsersIcon } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { createEmployee, deleteEmployee, updateEmployee } from '@/actions/employees';
 import type { ActionResult } from '@/actions/result';
 import { SimpleDataTable, type Column } from '@/components/simple-data-table';
 import { StatCards } from '@/components/stat-cards';
+import { ConfirmActionDialog } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
@@ -87,6 +89,7 @@ function EmployeeFormSheet({
   const [submitted, setSubmitted] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState('');
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
 
   const set = <K extends keyof EmployeeForm>(key: K, value: EmployeeForm[K]) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -99,39 +102,55 @@ function EmployeeFormSheet({
   // Pesan error baru muncul setelah field disentuh atau Save ditekan
   const shown = (key: FieldKey) => (submitted || touched[key] ? errors[key] : undefined);
 
-  const submit = async () => {
+  const submit = () => {
     setSubmitted(true);
-    if (Object.keys(errors).length > 0 || !form.position) return;
+    const position = form.position;
+    if (Object.keys(errors).length > 0 || !position) return;
+    setConfirmOpen(true);
+  };
 
+  const save = async () => {
+    const position = form.position;
+    if (!position) {
+      setError('Position is required.');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
       const result = await onSave({
         ...form,
-        position: form.position,
+        position,
         name: form.name.trim(),
         email: form.email.trim(),
       });
-      if (result.ok) onClose();
-      else setError(result.error);
+      if (result.ok) {
+        toast.success(mode === 'insert' ? 'Employee created successfully.' : 'Employee updated successfully.');
+        onClose();
+      } else {
+        setError(result.error);
+        toast.error(result.error);
+      }
     } catch {
       setError('Network error. Please try again.');
+      toast.error('Network error. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Sheet open onOpenChange={(open) => !open && !saving && onClose()}>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>{mode === 'insert' ? 'Insert Employee' : 'Update Employee'}</SheetTitle>
-          <SheetDescription>
-            {mode === 'insert'
-              ? 'Fill in the data for the new employee. They can log in with the default password and should change it from Account.'
-              : `Edit data for ${employee.employeeId}.`}
-          </SheetDescription>
-        </SheetHeader>
+    <>
+      <Sheet open onOpenChange={(open) => !open && !saving && onClose()}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>{mode === 'insert' ? 'Insert Employee' : 'Update Employee'}</SheetTitle>
+            <SheetDescription>
+              {mode === 'insert'
+                ? 'Fill in the data for the new employee. They can log in with the default password and should change it from Account.'
+                : `Edit data for ${employee.employeeId}.`}
+            </SheetDescription>
+          </SheetHeader>
 
         <div className='flex min-h-0 flex-1 flex-col overflow-y-auto px-4'>
           <FieldGroup>
@@ -227,17 +246,30 @@ function EmployeeFormSheet({
           </FieldGroup>
         </div>
 
-        <SheetFooter className='border-t'>
-          <Button disabled={saving} onClick={submit}>
-            {saving && <Spinner />}
-            {saving ? 'Saving...' : 'Save'}
-          </Button>
-          <Button variant='outline' disabled={saving} onClick={onClose}>
-            Cancel
-          </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+          <SheetFooter className='border-t'>
+            <Button disabled={saving} onClick={submit}>
+              {saving && <Spinner />}
+              {saving ? 'Saving...' : 'Save'}
+            </Button>
+            <Button variant='outline' disabled={saving} onClick={onClose}>
+              Cancel
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+      <ConfirmActionDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={mode === 'insert' ? 'Insert employee?' : 'Update employee?'}
+        description={
+          mode === 'insert'
+            ? `Create the employee account for ${form.name.trim()}?`
+            : `Save changes to ${form.name.trim()}'s employee record?`
+        }
+        confirmLabel={mode === 'insert' ? 'Insert' : 'Update'}
+        onConfirm={() => void save()}
+      />
+    </>
   );
 }
 

@@ -4,6 +4,7 @@ import * as React from 'react';
 import { BellRingIcon, SendIcon } from 'lucide-react';
 
 import { sendTestPush } from '@/actions/push';
+import { ConfirmActionDialog } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,6 +34,7 @@ const STATUS_NOTE: Record<string, string> = {
 export function PushCard({ className }: { className?: string }) {
   const role = useCurrentUser()?.role;
   const { status, busy, error, enable, disable } = usePush();
+  const [pendingAction, setPendingAction] = React.useState<'enable' | 'disable' | null>(null);
   const [testing, setTesting] = React.useState(false);
   const [testMessage, setTestMessage] = React.useState('');
 
@@ -73,14 +75,14 @@ export function PushCard({ className }: { className?: string }) {
 
         <div className='flex flex-wrap items-center gap-2'>
           {status === 'off' && (
-            <Button disabled={busy} onClick={enable}>
+            <Button disabled={busy} onClick={() => setPendingAction('enable')}>
               {busy && <Spinner />}
               Turn on push notifications
             </Button>
           )}
           {status === 'on' && (
             <>
-              <Button variant='outline' disabled={busy} onClick={disable}>
+              <Button variant='outline' disabled={busy} onClick={() => setPendingAction('disable')}>
                 {busy && <Spinner />}
                 Turn off
               </Button>
@@ -103,6 +105,22 @@ export function PushCard({ className }: { className?: string }) {
           </p>
         )}
       </CardContent>
+      <ConfirmActionDialog
+        open={pendingAction !== null}
+        onOpenChange={(open) => !open && setPendingAction(null)}
+        title={pendingAction === 'enable' ? 'Turn on push notifications?' : 'Turn off push notifications?'}
+        description={
+          pendingAction === 'enable'
+            ? 'Allow this device to receive push notifications for your account? Your browser may ask for notification permission.'
+            : 'Stop this device from receiving push notifications for your account?'
+        }
+        confirmLabel={pendingAction === 'enable' ? 'Turn On' : 'Turn Off'}
+        onConfirm={() => {
+          if (pendingAction === 'enable') void enable();
+          if (pendingAction === 'disable') void disable();
+          setPendingAction(null);
+        }}
+      />
     </Card>
   );
 }

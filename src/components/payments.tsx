@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { toast } from 'sonner';
 import {
   BanknoteIcon,
   CircleCheckIcon,
@@ -17,6 +18,7 @@ import { StatCards } from '@/components/stat-cards';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ConfirmActionDialog } from '@/components/ui/alert-dialog';
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
@@ -137,9 +139,11 @@ function ReceiptView({
 
 /** Form pembayaran satu order. Di-key per orderId sehingga ganti order = form bersih. */
 function PaymentForm({
+  orderId,
   total,
   onPay,
 }: {
+  orderId: string;
   total: number;
   onPay: (input: PayInput) => Promise<string | undefined>;
 }) {
@@ -148,6 +152,8 @@ function PaymentForm({
   const [submitted, setSubmitted] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [serverError, setServerError] = React.useState('');
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const [pendingPayment, setPendingPayment] = React.useState<PayInput | null>(null);
 
   const set = <K extends FieldKey>(key: K, value: Form[K]) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -162,19 +168,29 @@ function PaymentForm({
   const received = Number(form.received);
   const change = received - total;
 
-  const submit = async () => {
+  const submit = () => {
     setSubmitted(true);
     setServerError('');
     if (Object.keys(errors).length > 0 || !form.type) return;
+    const input: PayInput = isCard(form.type)
+      ? { payment: form.type as 'Credit Card' | 'Debit Card', bank: form.bank as Bank }
+      : { payment: 'Cash', received };
+    setPendingPayment(input);
+    setConfirmOpen(true);
+  };
+
+  const confirmPayment = async () => {
+    if (!pendingPayment) return;
     setSaving(true);
     try {
-      const input: PayInput = isCard(form.type)
-        ? { payment: form.type as 'Credit Card' | 'Debit Card', bank: form.bank as Bank }
-        : { payment: 'Cash', received };
-      const error = await onPay(input);
-      if (error) setServerError(error);
+      const error = await onPay(pendingPayment);
+      if (error) {
+        setServerError(error);
+        toast.error(error);
+      }
     } catch {
       setServerError('Network error. Please try again.');
+      toast.error('Network error. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -318,6 +334,14 @@ function PaymentForm({
         {saving && <Spinner />}
         {saving ? 'Saving...' : 'Save Payment'}
       </Button>
+      <ConfirmActionDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title='Confirm payment?'
+        description={`Record ${pendingPayment?.payment ?? form.type} payment of ${formatRupiah(total)} for order ${orderId}?`}
+        confirmLabel='Confirm Payment'
+        onConfirm={() => void confirmPayment()}
+      />
     </FieldGroup>
   );
 }
@@ -381,6 +405,7 @@ export function Payments({ initialOrders }: { initialOrders: PaymentOrder[] }) {
         },
       },
     }));
+    toast.success(`Payment for order ${order.orderId} recorded successfully.`);
     return undefined;
   };
 
@@ -601,6 +626,7 @@ export function Payments({ initialOrders }: { initialOrders: PaymentOrder[] }) {
                       )}
                       <PaymentForm
                         key={selected.orderId}
+                        orderId={selected.orderId}
                         total={selected.total}
                         onPay={(input) => pay(selected, input)}
                       />

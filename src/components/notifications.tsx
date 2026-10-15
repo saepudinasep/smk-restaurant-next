@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { toast } from 'sonner';
 import {
   BanknoteIcon,
   BellIcon,
@@ -24,6 +25,7 @@ import {
 import type { ActionResult } from '@/actions/result';
 import { StatCards } from '@/components/stat-cards';
 import { useLiveRefresh } from '@/hooks/use-live-refresh';
+import { ConfirmActionDialog } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
@@ -44,6 +46,10 @@ const typeIcon: Record<NotificationType, LucideIcon> = {
 const ORDER_ACTIVITY: NotificationType[] = ['order', 'kitchen', 'payment'];
 
 type Filter = 'all' | 'unread';
+type PendingAction =
+  | { kind: 'read'; notification: AppNotification; read: boolean }
+  | { kind: 'delete'; notification: AppNotification }
+  | { kind: 'read-all' };
 
 export function Notifications({
   initialNotifications,
@@ -57,6 +63,8 @@ export function Notifications({
   const [filter, setFilter] = React.useState<Filter>('all');
   const [busy, setBusy] = React.useState<{ id: string; action: 'read' | 'delete' } | null>(null);
   const [markingAll, setMarkingAll] = React.useState(false);
+  const [pendingAction, setPendingAction] = React.useState<PendingAction | null>(null);
+  const [pendingPushAction, setPendingPushAction] = React.useState<'enable' | null>(null);
   const [error, setError] = React.useState('');
   const push = usePush();
 
@@ -64,31 +72,43 @@ export function Notifications({
   useLiveRefresh();
 
   /** Menjalankan aksi, lalu memberi tahu lonceng di header agar angkanya langsung ikut berubah. */
-  const run = async (task: () => Promise<ActionResult>) => {
+  const run = async (task: () => Promise<ActionResult>, successMessage: string) => {
     setError('');
     try {
       const result = await task();
-      if (!result.ok) setError(result.error);
-      else window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
+      if (!result.ok) {
+        setError(result.error);
+        toast.error(result.error);
+      } else {
+        window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
+        toast.success(successMessage);
+      }
     } catch {
       setError('Network error. Please try again.');
+      toast.error('Network error. Please try again.');
     }
   };
 
-  const toggleRead = async (n: AppNotification) => {
-    setBusy({ id: n.id, action: 'read' });
-    await run(() => setNotificationRead(n.id, !n.read));
-    setBusy(null);
-  };
-  const remove = async (id: string) => {
-    setBusy({ id, action: 'delete' });
-    await run(() => deleteNotification(id));
-    setBusy(null);
-  };
-  const markAllRead = async () => {
-    setMarkingAll(true);
-    await run(() => markAllNotificationsRead());
-    setMarkingAll(false);
+  const confirmAction = async () => {
+    const action = pendingAction;
+    if (!action) return;
+    setPendingAction(null);
+    if (action.kind === 'read') {
+      setBusy({ id: action.notification.id, action: 'read' });
+      await run(
+        () => setNotificationRead(action.notification.id, action.read),
+        action.read ? 'Notification marked as read.' : 'Notification marked as unread.',
+      );
+      setBusy(null);
+    } else if (action.kind === 'delete') {
+      setBusy({ id: action.notification.id, action: 'delete' });
+      await run(() => deleteNotification(action.notification.id), 'Notification deleted.');
+      setBusy(null);
+    } else {
+      setMarkingAll(true);
+      await run(() => markAllNotificationsRead(), 'All notifications marked as read.');
+      setMarkingAll(false);
+    }
   };
 
   const total = items.length;
@@ -134,7 +154,11 @@ export function Notifications({
             <TabsTrigger value='unread'>Unread ({unread})</TabsTrigger>
           </TabsList>
         </Tabs>
-        <Button variant='outline' disabled={unread === 0 || markingAll} onClick={markAllRead}>
+        <Button
+          variant='outline'
+          disabled={unread === 0 || markingAll}
+          onClick={() => setPendingAction({ kind: 'read-all' })}
+        >
           {markingAll ? <Spinner /> : <CheckCheckIcon />}
           Mark all as read
         </Button>
@@ -146,7 +170,7 @@ export function Notifications({
             <BellRingIcon className='size-4 shrink-0' />
             Get an alert on this device even when the app is closed.
           </span>
-          <Button size='sm' disabled={push.busy} onClick={push.enable}>
+          <Button size='sm' disabled={push.busy} onClick={() => setPendingPushAction('enable')}>
             {push.busy && <Spinner />}
             Turn on push notifications
           </Button>
@@ -203,7 +227,7 @@ export function Notifications({
                         variant='ghost'
                         size='icon-sm'
                         disabled={isBusy}
-                        onClick={() => toggleRead(n)}
+                        onClick={() => setPendingAction({ kind: 'read', notification: n, read: !n.read })}
                         aria-label={n.read ? 'Mark as unread' : 'Mark as read'}
                         title={n.read ? 'Mark as unread' : 'Mark as read'}
                       >
@@ -219,7 +243,7 @@ export function Notifications({
                         variant='ghost'
                         size='icon-sm'
                         disabled={isBusy}
-                        onClick={() => remove(n.id)}
+                        onClick={() => setPendingAction({ kind: 'delete', notification: n })}
                         aria-label='Delete notification'
                         title='Delete'
                       >
@@ -233,6 +257,48 @@ export function Notifications({
           )}
         </CardContent>
       </Card>
+      <ConfirmActionDialog
+        open={pendingAction !== null}
+        onOpenChange={(open) => !open && setPendingAction(null)}
+        title={
+          pendingAction?.kind === 'delete'
+            ? 'Delete notification?'
+            : pendingAction?.kind === 'read-all'
+              ? 'Mark all notifications as read?'
+              : pendingAction?.kind === 'read' && pendingAction.read
+                ? 'Mark notification as read?'
+                : 'Mark notification as unread?'
+        }
+        description={
+          pendingAction?.kind === 'delete'
+            ? `"${pendingAction.notification.title}" will be permanently removed.`
+            : pendingAction?.kind === 'read-all'
+              ? 'All unread notifications will be marked as read.'
+              : pendingAction?.kind === 'read'
+                ? `"${pendingAction.notification.title}" will be marked as ${pendingAction.read ? 'read' : 'unread'}.`
+                : ''
+        }
+        confirmLabel={
+          pendingAction?.kind === 'delete'
+            ? 'Delete'
+            : pendingAction?.kind === 'read-all'
+              ? 'Mark All Read'
+              : 'Confirm'
+        }
+        variant={pendingAction?.kind === 'delete' ? 'destructive' : 'default'}
+        onConfirm={() => void confirmAction()}
+      />
+      <ConfirmActionDialog
+        open={pendingPushAction !== null}
+        onOpenChange={(open) => !open && setPendingPushAction(null)}
+        title='Turn on push notifications?'
+        description='Allow this device to receive push notifications for your account? Your browser may ask for notification permission.'
+        confirmLabel='Turn On'
+        onConfirm={() => {
+          setPendingPushAction(null);
+          void push.enable();
+        }}
+      />
     </div>
   );
 }

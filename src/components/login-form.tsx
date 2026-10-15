@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { cn } from 'cn';
 import { EyeIcon, EyeOffIcon } from 'lucide-react';
+import { useSession } from 'next-auth/react';
 
 import { login } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
@@ -18,13 +19,32 @@ export function LoginForm({
   // Hasil Server Action: { error } atau { redirectTo }. Saat berhasil, halaman dibuka dengan navigasi PENUH
   // supaya sesi di browser dimuat ulang (lihat penjelasan di actions/auth.ts).
   const [state, formAction, submitting] = React.useActionState(login, undefined);
-  const pending = submitting || Boolean(state?.redirectTo);
-  const serverError = state?.error;
+  const { update } = useSession();
+  const redirecting = React.useRef(false);
+  const [redirectError, setRedirectError] = React.useState('');
+  const pending = submitting || (Boolean(state?.redirectTo) && !redirectError);
+  const serverError = state?.error ?? redirectError;
 
   React.useEffect(() => {
-    if (!state?.redirectTo) return;
-    window.location.assign(state.redirectTo);
-  }, [state]);
+    if (!state?.redirectTo || redirecting.current || redirectError) return;
+    redirecting.current = true;
+
+    void (async () => {
+      try {
+        const session = await update();
+        if (!session?.user) {
+          setRedirectError('Login berhasil, tetapi sesi belum siap. Silakan coba login kembali.');
+          redirecting.current = false;
+          return;
+        }
+        window.sessionStorage.setItem('smk-login-welcome', 'true');
+        window.location.assign(state.redirectTo!);
+      } catch {
+        setRedirectError('Sesi gagal dimuat. Silakan coba login kembali.');
+        redirecting.current = false;
+      }
+    })();
+  }, [state, update, redirectError]);
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [show, setShow] = React.useState(false);
@@ -44,6 +64,8 @@ export function LoginForm({
       onSubmit={(e) => {
         setSubmitted(true);
         setDismissed(false);
+        setRedirectError('');
+        redirecting.current = false;
         // Field kosong: batalkan pengiriman (React tidak menjalankan action bila submit dibatalkan)
         if (!email.trim() || !password) e.preventDefault();
       }}
@@ -74,6 +96,7 @@ export function LoginForm({
             onChange={(e) => {
               setEmail(e.target.value);
               setDismissed(true);
+              setRedirectError('');
             }}
           />
           <FieldError>{emailError}</FieldError>
@@ -96,6 +119,7 @@ export function LoginForm({
               onChange={(e) => {
                 setPassword(e.target.value);
                 setDismissed(true);
+                setRedirectError('');
               }}
             />
             <button

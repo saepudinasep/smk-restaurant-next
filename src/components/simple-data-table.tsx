@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { toast } from 'sonner';
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -327,12 +328,18 @@ export function SimpleDataTable<T>({
                 try {
                   const result = await onDelete?.(toDelete);
                   if (result && result.ok === false) {
-                    setDeleteError(result.error ?? 'Failed to delete.'); // dialog tetap terbuka
+                    const message = result.error ?? 'Failed to delete.';
+                    setDeleteError(message); // dialog tetap terbuka
+                    toast.error(message);
                   } else {
+                    toast.success(
+                      `${getRowLabel ? `"${getRowLabel(toDelete)}"` : 'Item'} deleted successfully.`,
+                    );
                     setToDelete(null);
                   }
                 } catch {
                   setDeleteError('Network error. Please try again.');
+                  toast.error('Network error. Please try again.');
                 } finally {
                   setDeleting(false);
                 }

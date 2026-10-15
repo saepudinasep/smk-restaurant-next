@@ -3,8 +3,10 @@
 import * as React from 'react';
 import { useSession } from 'next-auth/react';
 import { CheckIcon, CircleIcon, KeyRoundIcon } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { changePassword, updateProfile, type PasswordField } from '@/actions/account';
+import { ConfirmActionDialog } from '@/components/ui/alert-dialog';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -87,6 +89,7 @@ function ProfileCard({ profile }: { profile: AccountProfile }) {
   const [touched, setTouched] = React.useState<Partial<Record<ProfileKey, boolean>>>({});
   const [submitted, setSubmitted] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [message, setMessage] = React.useState('');
   const [error, setError] = React.useState('');
 
@@ -101,9 +104,13 @@ function ProfileCard({ profile }: { profile: AccountProfile }) {
   const shown = (key: ProfileKey) => (submitted || touched[key] ? errors[key] : undefined);
   const dirty = form.name !== saved.name || form.handphone !== saved.handphone;
 
-  const save = async () => {
+  const save = () => {
     setSubmitted(true);
     if (Object.keys(errors).length > 0) return;
+    setConfirmOpen(true);
+  };
+
+  const confirmSave = async () => {
     setSaving(true);
     setError('');
     try {
@@ -111,6 +118,7 @@ function ProfileCard({ profile }: { profile: AccountProfile }) {
       const result = await updateProfile(next);
       if (!result.ok) {
         setError(result.error);
+        toast.error(result.error);
         return;
       }
       await update(); // muat ulang sesi supaya nama baru juga tampil di sidebar
@@ -119,8 +127,10 @@ function ProfileCard({ profile }: { profile: AccountProfile }) {
       setTouched({});
       setSubmitted(false);
       setMessage('Profile updated.');
+      toast.success('Profile updated successfully.');
     } catch {
       setError('Network error. Please try again.');
+      toast.error('Network error. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -219,6 +229,14 @@ function ProfileCard({ profile }: { profile: AccountProfile }) {
           Cancel
         </Button>
       </CardFooter>
+      <ConfirmActionDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title='Update profile?'
+        description={`Save your profile changes for ${form.name.trim()}?`}
+        confirmLabel='Update Profile'
+        onConfirm={() => void confirmSave()}
+      />
     </Card>
   );
 }
@@ -237,6 +255,7 @@ function PasswordCard() {
   const [touched, setTouched] = React.useState<Partial<Record<PwKey, boolean>>>({});
   const [submitted, setSubmitted] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [message, setMessage] = React.useState('');
   // Kesalahan dari server (mis. password lama salah) dan field yang dimaksud
   const [serverError, setServerError] = React.useState<{
@@ -266,9 +285,13 @@ function PasswordCard() {
     (submitted || touched[key] ? errors[key] : undefined) ??
     (serverError?.field === key ? serverError.error : undefined);
 
-  const save = async () => {
+  const save = () => {
     setSubmitted(true);
     if (Object.keys(errors).length > 0) return;
+    setConfirmOpen(true);
+  };
+
+  const confirmSave = async () => {
     setSaving(true);
     setServerError(null);
     try {
@@ -279,6 +302,7 @@ function PasswordCard() {
       });
       if (!result.ok) {
         setServerError({ field: result.field, error: result.error });
+        toast.error(result.error);
         return;
       }
       setOldPw('');
@@ -287,8 +311,10 @@ function PasswordCard() {
       setTouched({});
       setSubmitted(false);
       setMessage('Password changed successfully.');
+      toast.success('Password changed successfully.');
     } catch {
       setServerError({ field: 'form', error: 'Network error. Please try again.' });
+      toast.error('Network error. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -387,6 +413,14 @@ function PasswordCard() {
           {saving ? 'Saving...' : 'Save'}
         </Button>
       </CardFooter>
+      <ConfirmActionDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title='Change password?'
+        description='Your current password will be replaced with the new password.'
+        confirmLabel='Change Password'
+        onConfirm={() => void confirmSave()}
+      />
     </Card>
   );
 }

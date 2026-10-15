@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { PlusIcon, TagIcon, TrophyIcon, UploadIcon, UtensilsIcon } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { createMenu, deleteMenu, updateMenu } from '@/actions/menus';
 import type { ActionResult } from '@/actions/result';
@@ -9,6 +10,7 @@ import { CategoryFilter } from '@/components/category-filter';
 import { MenuPhoto } from '@/components/menu-photo';
 import { SimpleDataTable, type Column } from '@/components/simple-data-table';
 import { StatCards } from '@/components/stat-cards';
+import { ConfirmActionDialog } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
@@ -112,6 +114,7 @@ function MenuFormSheet({
   const [stage, setStage] = React.useState<Stage>(null);
   const [error, setError] = React.useState('');
   const [fileError, setFileError] = React.useState('');
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
   const fileInput = React.useRef<HTMLInputElement>(null);
   const saving = stage !== null;
 
@@ -155,10 +158,13 @@ function MenuFormSheet({
   const shown = (key: FieldKey) => (submitted || touched[key] ? errors[key] : undefined);
   const photoError = fileError || shown('photo');
 
-  const submit = async () => {
+  const submit = () => {
     setSubmitted(true);
     if (Object.keys(errors).length > 0 || fileError) return;
+    setConfirmOpen(true);
+  };
 
+  const save = async () => {
     setError('');
     try {
       // 1) File baru: kirim langsung ke Cloudinary (tidak lewat server kita)
@@ -168,6 +174,7 @@ function MenuFormSheet({
         const uploaded = await uploadMenuPhoto(file);
         if (!uploaded.ok) {
           setError(uploaded.error);
+          toast.error(uploaded.error);
           return;
         }
         photoPublicId = uploaded.publicId;
@@ -182,10 +189,16 @@ function MenuFormSheet({
         category: form.category,
         photoPublicId,
       });
-      if (result.ok) onClose();
-      else setError(result.error);
+      if (result.ok) {
+        toast.success(mode === 'insert' ? 'Menu created successfully.' : 'Menu updated successfully.');
+        onClose();
+      } else {
+        setError(result.error);
+        toast.error(result.error);
+      }
     } catch {
       setError('Network error. Please try again.');
+      toast.error('Network error. Please try again.');
     } finally {
       setStage(null);
     }
@@ -195,16 +208,17 @@ function MenuFormSheet({
   const photoLabel = file ? file.name : form.photo ? 'Current photo' : '';
 
   return (
-    <Sheet open onOpenChange={(open) => !open && !saving && onClose()}>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>{mode === 'insert' ? 'Insert Menu' : 'Update Menu'}</SheetTitle>
-          <SheetDescription>
-            {mode === 'insert'
-              ? 'Fill in the data for the new menu.'
-              : `Edit data for menu #${menu.menuId}.`}
-          </SheetDescription>
-        </SheetHeader>
+    <>
+      <Sheet open onOpenChange={(open) => !open && !saving && onClose()}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>{mode === 'insert' ? 'Insert Menu' : 'Update Menu'}</SheetTitle>
+            <SheetDescription>
+              {mode === 'insert'
+                ? 'Fill in the data for the new menu.'
+                : `Edit data for menu #${menu.menuId}.`}
+            </SheetDescription>
+          </SheetHeader>
 
         <div className='flex min-h-0 flex-1 flex-col overflow-y-auto px-4'>
           <FieldGroup>
@@ -316,21 +330,34 @@ function MenuFormSheet({
           </FieldGroup>
         </div>
 
-        <SheetFooter className='border-t'>
-          <Button disabled={saving} onClick={submit}>
-            {saving && <Spinner />}
-            {stage === 'uploading'
-              ? 'Uploading photo...'
-              : stage === 'saving'
-                ? 'Saving...'
-                : 'Save'}
-          </Button>
-          <Button variant='outline' disabled={saving} onClick={onClose}>
-            Cancel
-          </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+          <SheetFooter className='border-t'>
+            <Button disabled={saving} onClick={submit}>
+              {saving && <Spinner />}
+              {stage === 'uploading'
+                ? 'Uploading photo...'
+                : stage === 'saving'
+                  ? 'Saving...'
+                  : 'Save'}
+            </Button>
+            <Button variant='outline' disabled={saving} onClick={onClose}>
+              Cancel
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+      <ConfirmActionDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={mode === 'insert' ? 'Insert menu?' : 'Update menu?'}
+        description={
+          mode === 'insert'
+            ? `Add ${form.name.trim()} to the menu?`
+            : `Save changes to ${form.name.trim()}?`
+        }
+        confirmLabel={mode === 'insert' ? 'Insert' : 'Update'}
+        onConfirm={() => void save()}
+      />
+    </>
   );
 }
 

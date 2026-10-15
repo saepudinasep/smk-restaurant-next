@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { toast } from 'sonner';
 import {
   CircleCheckIcon,
   MinusIcon,
@@ -24,6 +25,7 @@ import {
 } from '@/components/ui/card';
 import { FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { ConfirmActionDialog } from '@/components/ui/alert-dialog';
 import {
   Select,
   SelectContent,
@@ -130,6 +132,7 @@ export function OrderForm({
   const [memberId, setMemberId] = React.useState('');
   const [submitted, setSubmitted] = React.useState(false);
   const [placing, setPlacing] = React.useState(false);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [placed, setPlaced] = React.useState<Placed | null>(null);
   const [error, setError] = React.useState('');
 
@@ -159,11 +162,14 @@ export function OrderForm({
 
   const memberError = submitted && !memberId ? 'Select a member for this order.' : undefined;
 
-  const placeOrder = async () => {
+  const placeOrder = () => {
     setSubmitted(true);
     setError('');
     if (!memberId || lines.length === 0) return;
+    setConfirmOpen(true);
+  };
 
+  const confirmPlaceOrder = async () => {
     setPlacing(true);
     try {
       // Hanya member dan (menu, qty) yang dikirim; harga, tanggal, kasir, dan kode order ditentukan server
@@ -173,20 +179,24 @@ export function OrderForm({
       });
       if (!result.ok) {
         setError(result.error);
+        toast.error(result.error);
         return;
       }
       setPlaced({ orderId: result.orderId, total: result.total, items: result.items });
+      toast.success(`Order ${result.orderId} placed successfully.`);
       setCart([]);
       setMemberId('');
       setSubmitted(false);
     } catch {
       setError('Network error. Please try again.');
+      toast.error('Network error. Please try again.');
     } finally {
       setPlacing(false);
     }
   };
 
   return (
+    <>
     <div className='grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]'>
       {/* Daftar menu */}
       <Card>
@@ -357,5 +367,14 @@ export function OrderForm({
         </CardFooter>
       </Card>
     </div>
+    <ConfirmActionDialog
+      open={confirmOpen}
+      onOpenChange={setConfirmOpen}
+      title='Place this order?'
+      description={`Create an order for ${memberItems.find((member) => member.value === memberId)?.label ?? 'the selected member'} with ${itemCount} ${itemCount === 1 ? 'item' : 'items'}, totaling ${formatRupiah(total)}?`}
+      confirmLabel='Place Order'
+      onConfirm={() => void confirmPlaceOrder()}
+    />
+    </>
   );
 }

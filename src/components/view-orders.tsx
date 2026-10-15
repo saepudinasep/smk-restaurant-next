@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { toast } from 'sonner';
 import {
   ChefHatIcon,
   CircleCheckIcon,
@@ -15,6 +16,7 @@ import { updateDishStatus } from '@/actions/kitchen';
 import { MenuPhoto } from '@/components/menu-photo';
 import { useLiveRefresh } from '@/hooks/use-live-refresh';
 import { StatCards } from '@/components/stat-cards';
+import { ConfirmActionDialog } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -66,6 +68,11 @@ export function ViewOrders({ initialOrders }: { initialOrders: KitchenOrder[] })
 
   const [selectedId, setSelectedId] = React.useState<string>(() => orders[0]?.orderId ?? '');
   const [saving, setSaving] = React.useState<Set<string>>(new Set());
+  const [pendingStatus, setPendingStatus] = React.useState<{
+    detailIds: string[];
+    status: ItemStatus;
+    label: string;
+  } | null>(null);
   const [error, setError] = React.useState('');
   const [query, setQuery] = React.useState('');
 
@@ -77,9 +84,15 @@ export function ViewOrders({ initialOrders }: { initialOrders: KitchenOrder[] })
     setError('');
     try {
       const result = await updateDishStatus({ detailIds, status });
-      if (!result.ok) setError(result.error);
+      if (!result.ok) {
+        setError(result.error);
+        toast.error(result.error);
+      } else {
+        toast.success(`Dish status updated to ${status}.`);
+      }
     } catch {
       setError('Network error. Please try again.');
+      toast.error('Network error. Please try again.');
     } finally {
       setSaving((s) => {
         const next = new Set(s);
@@ -87,6 +100,10 @@ export function ViewOrders({ initialOrders }: { initialOrders: KitchenOrder[] })
         return next;
       });
     }
+  };
+
+  const requestStatusChange = (detailIds: string[], status: ItemStatus, label: string) => {
+    setPendingStatus({ detailIds, status, label });
   };
 
   // Ringkasan dari semua order yang tampil
@@ -112,6 +129,7 @@ export function ViewOrders({ initialOrders }: { initialOrders: KitchenOrder[] })
   const undelivered = selectedItems.filter((d) => d.status !== 'Deliver');
 
   return (
+    <>
     <div className='flex flex-col gap-3 md:gap-3'>
       <StatCards
         items={[
@@ -308,7 +326,11 @@ export function ViewOrders({ initialOrders }: { initialOrders: KitchenOrder[] })
                                     onValueChange={(v) =>
                                       v &&
                                       v !== d.status &&
-                                      changeStatus([d.detailId], v as ItemStatus)
+                                      requestStatusChange(
+                                        [d.detailId],
+                                        v as ItemStatus,
+                                        `${d.menuName} in order ${selected.orderId}`,
+                                      )
                                     }
                                   >
                                     <SelectTrigger
@@ -354,9 +376,10 @@ export function ViewOrders({ initialOrders }: { initialOrders: KitchenOrder[] })
                         undelivered.length === 0 || undelivered.some((d) => saving.has(d.detailId))
                       }
                       onClick={() =>
-                        changeStatus(
+                        requestStatusChange(
                           undelivered.map((d) => d.detailId),
                           'Deliver',
+                          `all remaining dishes in order ${selected.orderId}`,
                         )
                       }
                     >
@@ -371,5 +394,22 @@ export function ViewOrders({ initialOrders }: { initialOrders: KitchenOrder[] })
         </div>
       )}
     </div>
+    <ConfirmActionDialog
+      open={pendingStatus !== null}
+      onOpenChange={(open) => !open && setPendingStatus(null)}
+      title='Update dish status?'
+      description={
+        pendingStatus
+          ? `Change the status of ${pendingStatus.label} to ${pendingStatus.status}?`
+          : ''
+      }
+      confirmLabel='Update Status'
+      onConfirm={() => {
+        if (!pendingStatus) return;
+        void changeStatus(pendingStatus.detailIds, pendingStatus.status);
+        setPendingStatus(null);
+      }}
+    />
+    </>
   );
 }

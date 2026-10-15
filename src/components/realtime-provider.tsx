@@ -49,5 +49,11 @@ export function RealtimeProvider() {
     };
   }, [userId, router]);
 
+  React.useEffect(() => {
+    if (window.sessionStorage.getItem('smk-login-welcome') !== 'true') return;
+    window.sessionStorage.removeItem('smk-login-welcome');
+    toast.success('Selamat datang di SMK Restaurant!');
+  }, []);
+
   return <Toaster />;
 }

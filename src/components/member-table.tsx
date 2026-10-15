@@ -2,11 +2,13 @@
 
 import * as React from 'react';
 import { PlusIcon, ShoppingBagIcon, UserPlusIcon, UsersIcon } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { createMember, deleteMember, updateMember } from '@/actions/members';
 import type { ActionResult } from '@/actions/result';
 import { SimpleDataTable, type Column } from '@/components/simple-data-table';
 import { StatCards } from '@/components/stat-cards';
+import { ConfirmActionDialog } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -87,6 +89,7 @@ function MemberFormSheet({
   const [submitted, setSubmitted] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState('');
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
 
   const set = <K extends keyof Member>(key: K, value: Member[K]) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -99,34 +102,44 @@ function MemberFormSheet({
   // Pesan error baru muncul setelah field disentuh atau Save ditekan
   const shown = (key: FieldKey) => (submitted || touched[key] ? errors[key] : undefined);
 
-  const submit = async () => {
+  const submit = () => {
     setSubmitted(true);
     if (Object.keys(errors).length > 0) return;
+    setConfirmOpen(true);
+  };
 
+  const save = async () => {
     setSaving(true);
     setError('');
     try {
       const result = await onSave({ ...form, name: form.name.trim(), email: form.email.trim() });
-      if (result.ok) onClose();
-      else setError(result.error);
+      if (result.ok) {
+        toast.success(mode === 'insert' ? 'Member created successfully.' : 'Member updated successfully.');
+        onClose();
+      } else {
+        setError(result.error);
+        toast.error(result.error);
+      }
     } catch {
       setError('Network error. Please try again.');
+      toast.error('Network error. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Sheet open onOpenChange={(open) => !open && !saving && onClose()}>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>{mode === 'insert' ? 'Insert Member' : 'Update Member'}</SheetTitle>
-          <SheetDescription>
-            {mode === 'insert'
-              ? 'Fill in the data for the new member.'
-              : `Edit data for ${member.memberId}.`}
-          </SheetDescription>
-        </SheetHeader>
+    <>
+      <Sheet open onOpenChange={(open) => !open && !saving && onClose()}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>{mode === 'insert' ? 'Insert Member' : 'Update Member'}</SheetTitle>
+            <SheetDescription>
+              {mode === 'insert'
+                ? 'Fill in the data for the new member.'
+                : `Edit data for ${member.memberId}.`}
+            </SheetDescription>
+          </SheetHeader>
 
         <div className='flex min-h-0 flex-1 flex-col overflow-y-auto px-4'>
           <FieldGroup>
@@ -203,17 +216,30 @@ function MemberFormSheet({
           </FieldGroup>
         </div>
 
-        <SheetFooter className='border-t'>
-          <Button disabled={saving} onClick={submit}>
-            {saving && <Spinner />}
-            {saving ? 'Saving...' : 'Save'}
-          </Button>
-          <Button variant='outline' disabled={saving} onClick={onClose}>
-            Cancel
-          </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+          <SheetFooter className='border-t'>
+            <Button disabled={saving} onClick={submit}>
+              {saving && <Spinner />}
+              {saving ? 'Saving...' : 'Save'}
+            </Button>
+            <Button variant='outline' disabled={saving} onClick={onClose}>
+              Cancel
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+      <ConfirmActionDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={mode === 'insert' ? 'Insert member?' : 'Update member?'}
+        description={
+          mode === 'insert'
+            ? `Create a member record for ${form.name.trim()}?`
+            : `Save changes to ${form.name.trim()}'s member record?`
+        }
+        confirmLabel={mode === 'insert' ? 'Insert' : 'Update'}
+        onConfirm={() => void save()}
+      />
+    </>
   );
 }
 
