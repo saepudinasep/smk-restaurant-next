@@ -11,8 +11,8 @@ const { auth } = NextAuth(authConfig);
 export const proxy = auth;
 
 export const config = {
-  // Lewati /api, aset Next.js, dan file statis.
+  // Lindungi halaman dan API; lewati aset Next.js dan file statis.
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|map)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|map)$).*)',
   ],
 };

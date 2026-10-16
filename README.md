@@ -1,5 +1,15 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Arcjet bot protection
+
+This application uses Arcjet to block detected bots on page and API routes. Requests are evaluated in `LIVE` mode, and access logs include the HTTP method, route path (without query parameters), and Arcjet decision.
+
+1. Create a site in the [Arcjet dashboard](https://console.arcjet.com/) and copy its API key.
+2. Set the key as `ARCJET_KEY` in your local environment (for example, in `.env.local`) and in your deployment environment.
+3. View request details and routes in the Arcjet dashboard. Application route logs are also emitted as structured JSON to the hosting provider's server logs.
+
+Detected bots are blocked by default. If the application should allow specific bots, configure them in `src/lib/arcjet.ts`.
+
 ## Getting Started
 
 First, run the development server:
